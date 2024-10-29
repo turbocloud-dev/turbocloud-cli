@@ -11,11 +11,27 @@ import (
 )
 
 var (
-	appStyle = lipgloss.NewStyle().Padding(1, 2)
+	appStyle  = lipgloss.NewStyle().Padding(1, 2)
+	listStyle = lipgloss.NewStyle().Padding(5, 4)
 
 	titleStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FFFDF5")).
 			Background(lipgloss.Color("#25A065")).
+			Padding(0, 1)
+
+	breadhumbPositionStyle = lipgloss.NewStyle().
+				Padding(1, 4)
+
+	breadhumbStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FFFDF5")).
+			Background(lipgloss.Color("#25A065")).
+			Padding(0, 1)
+
+	topHintPositionStyle = lipgloss.NewStyle().
+				Padding(1, 3)
+
+	topHintStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#bfbfbf")).
 			Padding(0, 1)
 
 	statusMessageStyle = lipgloss.NewStyle().
@@ -37,13 +53,15 @@ type model struct {
 	delegateKeys *delegateKeyMap
 	machineMsg   MachineMsg
 	machineList  table.Model
-
-	screenType int
+	screenType   int
+	screenWidth  int
+	screenHeight int
 }
 
 var baseStyle = lipgloss.NewStyle().
 	BorderStyle(lipgloss.HiddenBorder()).
-	BorderForeground(lipgloss.Color("240"))
+	BorderForeground(lipgloss.Color("240")).
+	Padding(0, 2)
 
 func newModel() model {
 	var (
@@ -58,6 +76,7 @@ func newModel() model {
 		item{title: "Machines", description: "Manage servers and local machines"},
 		item{title: "Add Service", description: "Deploy a new service"},
 		item{title: "Services", description: "Deploy and manage services"},
+		item{title: "Docs", description: "Detailed documentation and examples"},
 	}
 
 	// Setup list
@@ -84,10 +103,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		m.screenWidth = msg.Width
+		m.screenHeight = msg.Height
 		h, v := appStyle.GetFrameSize()
 		m.list.SetSize(msg.Width-h, msg.Height-v)
-		m.machineList.SetWidth(msg.Width - h)
-		m.machineList.SetHeight(msg.Height - 2*v)
+
+		h, v = listStyle.GetFrameSize()
+		m.machineList.SetWidth(m.screenWidth - h)
+		m.machineList.SetHeight(m.screenHeight - v)
 
 	case MachineMsg:
 		// The server returned a status message. Save it to our model. Also
@@ -119,6 +142,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			tableRow = append(tableRow, machine.VPNIp)
 			tableRow = append(tableRow, machine.PublicIp)
 			tableRow = append(tableRow, machine.Status)
+			tableRow = append(tableRow, "34%")
+			tableRow = append(tableRow, "12GB")
+			tableRow = append(tableRow, "24GB")
+
 			rows = append(rows, tableRow)
 		}
 
@@ -137,12 +164,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Bold(false)
 		s.Selected = s.Selected.
 			Foreground(lipgloss.Color("255")).
-			Background(lipgloss.Color("240")).
+			Background(lipgloss.Color("#bfbfbf")).
 			Bold(true)
 		s.Cell = s.Cell.Height(1)
 		t.SetStyles(s)
 
 		m.machineList = t
+		h, v := listStyle.GetFrameSize()
+		m.machineList.SetWidth(m.screenWidth - h)
+		m.machineList.SetHeight(m.screenHeight - v)
 
 		return m, nil
 
@@ -150,6 +180,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Don't match any of the keys below if we're actively filtering.
 		if m.list.FilterState() == list.Filtering {
 			break
+		}
+		switch msg.String() {
+
+		// These keys should exit the program.
+		case "left", "esc":
+			if m.screenType == 2 {
+				m.screenType = 1
+			}
+			return m, nil
 		}
 
 	}
@@ -169,7 +208,7 @@ func (m model) View() string {
 	if m.screenType == 1 {
 		return appStyle.Render(m.list.View())
 	} else {
-		return baseStyle.Render(m.machineList.View()) + "\n  " + m.machineList.HelpView() + "\n"
+		return breadhumbPositionStyle.Render(breadhumbStyle.Render("TurboCloud > Machines")) + topHintPositionStyle.Render(topHintStyle.Render("Press Enter to select a machine\nPress ← or ESC to return to main menu")) + baseStyle.Render(m.machineList.View()) + "\n  " + m.machineList.HelpView() + "\n"
 	}
 
 }
