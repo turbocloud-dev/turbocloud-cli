@@ -24,8 +24,11 @@ func newItemDelegate(keys *delegateKeyMap) list.DefaultDelegate {
 			case key.Matches(msg, keys.choose):
 				if title == "Machines" {
 					return getMachines
+				} else if title == "Add Machine" {
+					return newMachineMsg
 				}
 				return m.NewStatusMessage(statusMessageStyle("You chose " + title))
+
 			}
 		}
 
@@ -44,6 +47,13 @@ func newItemDelegate(keys *delegateKeyMap) list.DefaultDelegate {
 
 	return d
 }
+
+func newMachineMsg() tea.Msg {
+	var msg NewMachineMsg
+	return msg
+}
+
+type NewMachineMsg int
 
 type delegateKeyMap struct {
 	choose key.Binding

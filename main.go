@@ -1,12 +1,14 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -56,12 +58,29 @@ type model struct {
 	screenType   int
 	screenWidth  int
 	screenHeight int
+
+	//New machine
+	newMachineForm        *huh.Form
+	newMachineJoinURLForm *huh.Form
 }
 
 var baseStyle = lipgloss.NewStyle().
 	BorderStyle(lipgloss.HiddenBorder()).
 	BorderForeground(lipgloss.Color("240")).
 	Padding(0, 2)
+
+var (
+	newMachineTypes string
+	newMachineName  string
+	newMachineIsAdd bool
+)
+
+type NewMachineJoinURLMsg int
+
+func newMachineJoinURLMsg() tea.Msg {
+	var msg NewMachineJoinURLMsg
+	return msg
+}
 
 func newModel() model {
 	var (
@@ -86,11 +105,14 @@ func newModel() model {
 	mainMenu.Styles.Title = titleStyle
 	mainMenu.SetShowStatusBar(false)
 
-	return model{
+	model := model{
 		list:         mainMenu,
 		delegateKeys: delegateKeys,
 		screenType:   1,
 	}
+
+	return model
+
 }
 
 func (m model) Init() tea.Cmd {
@@ -111,6 +133,63 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h, v = listStyle.GetFrameSize()
 		m.machineList.SetWidth(m.screenWidth - h)
 		m.machineList.SetHeight(m.screenHeight - v)
+
+	case NewMachineMsg:
+		m.screenType = 3
+
+		newMachineTypes = "" //newMachineTypes[:0]
+		newMachineName = ""
+		newMachineIsAdd = true
+		m.newMachineForm = huh.NewForm(
+			huh.NewGroup(
+				huh.NewSelect[string]().
+					Title("Choose Machine Type").
+					Options(
+						huh.NewOption("Server", "lettuce"),
+						huh.NewOption("Local Machine", "local_machine"),
+					).
+					Value(&newMachineTypes),
+
+				huh.NewInput().
+					Title("Machine Name").
+					Value(&newMachineName).
+					Validate(func(str string) error {
+						if str == "Frank" {
+							return errors.New("Sorry, we don’t serve customers named Frank.")
+						}
+						return nil
+					}),
+				huh.NewConfirm().
+					Key("done").
+					Title("Add a new machine?").
+					Validate(func(v bool) error {
+						if !v {
+							m.screenType = 1
+						}
+						return nil
+					}).
+					Affirmative("Add").
+					Negative("Cancel").
+					Value(&newMachineIsAdd),
+			),
+		)
+
+		m.newMachineForm.Init()
+
+	case NewMachineJoinURLMsg:
+		m.screenType = 4
+
+		m.newMachineJoinURLForm = huh.NewForm(
+			huh.NewGroup(
+				huh.NewNote().
+					Title("Connect a new machine to VPN").
+					Description("• SSH into a server\n• Run a command:\n\n    curl turbocloud.dev/setup\n\n• After a server has finished provision you will see status Online near that machine in Machines\n\n").
+					Next(true).
+					NextLabel("OK"),
+			),
+		)
+
+		m.newMachineJoinURLForm.Init()
 
 	case MachineMsg:
 		// The server returned a status message. Save it to our model. Also
@@ -184,32 +263,99 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 
 		// These keys should exit the program.
-		case "left", "esc":
-			if m.screenType == 2 {
+		case "esc":
+			if m.screenType == 2 || m.screenType == 3 {
 				m.screenType = 1
+				m.newMachineForm.State = huh.StateNormal
+				return m, nil
 			}
-			return m, nil
+		case "ctrl+c", "q":
+			return m, tea.Quit
 		}
 
 	}
 
 	// This will also call our delegate's update function.
-	m.machineList, cmd = m.machineList.Update(msg)
-	cmds = append(cmds, cmd)
+	if m.screenType == 1 {
+		newListModel, cmd := m.list.Update(msg)
+		m.list = newListModel
+		cmds = append(cmds, cmd)
 
-	newListModel, cmd := m.list.Update(msg)
-	m.list = newListModel
-	cmds = append(cmds, cmd)
+	}
+
+	if m.screenType == 2 {
+		m.machineList, cmd = m.machineList.Update(msg)
+		cmds = append(cmds, cmd)
+	}
+
+	if m.screenType == 3 {
+		form, cmd := m.newMachineForm.Update(msg)
+		if f, ok := form.(*huh.Form); ok {
+			m.newMachineForm = f
+		}
+
+		cmds = append(cmds, cmd)
+
+		if m.newMachineForm.State == huh.StateAborted {
+			m.newMachineForm.State = huh.StateNormal
+			m.screenType = 1
+		} else if m.newMachineForm.State == huh.StateCompleted {
+			m.newMachineForm.State = huh.StateNormal
+			if newMachineIsAdd {
+				cmds = append(cmds, newMachineJoinURLMsg)
+			} else {
+				m.screenType = 1
+			}
+		}
+
+	}
+
+	if m.screenType == 4 {
+		form, cmd := m.newMachineJoinURLForm.Update(msg)
+		if f, ok := form.(*huh.Form); ok {
+			m.newMachineJoinURLForm = f
+		}
+
+		cmds = append(cmds, cmd)
+
+		if m.newMachineJoinURLForm.State == huh.StateCompleted {
+			m.screenType = 1
+		}
+
+	}
 
 	return m, tea.Batch(cmds...)
 }
 
 func (m model) View() string {
-	if m.screenType == 1 {
+	switch m.screenType {
+	case 1:
 		return appStyle.Render(m.list.View())
-	} else {
+	case 2:
 		return breadhumbPositionStyle.Render(breadhumbStyle.Render("TurboCloud > Machines")) + topHintPositionStyle.Render(topHintStyle.Render("Press Enter to select a machine\nPress ← or ESC to return to main menu")) + baseStyle.Render(m.machineList.View()) + "\n  " + m.machineList.HelpView() + "\n"
+	case 3:
+		{
+			if m.newMachineForm.State == huh.StateCompleted {
+
+				//class := m.newMachineForm.GetString("class")
+				//level := m.newMachineForm.GetString("level")
+				//return fmt.Sprintf("You selected: %s, Lvl. %d", class, level)
+			}
+			return breadhumbPositionStyle.Render(breadhumbStyle.Render("TurboCloud > Add Machine")) + topHintPositionStyle.Render(topHintStyle.Render("Press X or Space to select options\nPress Enter to confirm\nPress ESC to return to main menu")) + baseStyle.Render(m.newMachineForm.View()) + "\n"
+		}
+	case 4:
+		{
+			if m.newMachineForm.State == huh.StateCompleted {
+
+				//class := m.newMachineForm.GetString("class")
+				//level := m.newMachineForm.GetString("level")
+				//return fmt.Sprintf("You selected: %s, Lvl. %d", class, level)
+			}
+			return breadhumbPositionStyle.Render(breadhumbStyle.Render("TurboCloud > Add Machine")) + topHintPositionStyle.Render(topHintStyle.Render("Press ESC to return to main menu")) + baseStyle.Render(m.newMachineJoinURLForm.View()) + "\n"
+		}
 	}
+
+	return ""
 
 }
 
