@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
 
@@ -53,8 +52,23 @@ func (i item) FilterValue() string { return i.title }
 type model struct {
 	list         list.Model
 	delegateKeys *delegateKeyMap
-	machineMsg   MachineMsg
-	machineList  table.Model
+
+	//Machines
+	machineList table.Model
+
+	//Services
+	serviceList     table.Model
+	selectedService Service
+
+	//New service
+	newServiceForm *huh.Form
+
+	//Environments
+	environmentList table.Model
+
+	//New environment
+	newEnvironmentForm *huh.Form
+
 	screenType   int
 	screenWidth  int
 	screenHeight int
@@ -75,10 +89,31 @@ var (
 	newMachineIsAdd bool
 )
 
-type NewMachineJoinURLMsg int
+var (
+	newServiceName   string
+	newServiceGitURL string
+	newServiceIsAdd  bool
+)
+
+type NewMachineJoinURLMsg struct {
+	newMachine Machine
+}
+
+type NewEnvironmentMsg struct {
+	service Service
+}
+
+func newEnvironmentMsg() tea.Msg {
+	var msg NewEnvironmentMsg
+	msg.service = postService(newServiceName, newServiceGitURL)
+	return msg
+}
 
 func newMachineJoinURLMsg() tea.Msg {
 	var msg NewMachineJoinURLMsg
+	//Send a request to create a new machine
+	msg.newMachine = postMachine(newMachineName, newMachineTypes)
+
 	return msg
 }
 
@@ -94,7 +129,7 @@ func newModel() model {
 		item{title: "Add Machine", description: "Add a new server or local machine"},
 		item{title: "Machines", description: "Manage servers and local machines"},
 		item{title: "Add Service", description: "Deploy a new service"},
-		item{title: "Services", description: "Deploy and manage services"},
+		item{title: "Services", description: "Deploy and manage services and environments"},
 		item{title: "Docs", description: "Detailed documentation and examples"},
 	}
 
@@ -134,6 +169,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.machineList.SetWidth(m.screenWidth - h)
 		m.machineList.SetHeight(m.screenHeight - v)
 
+		h, v = listStyle.GetFrameSize()
+		m.serviceList.SetWidth(m.screenWidth - h)
+		m.serviceList.SetHeight(m.screenHeight - v)
+
+		h, v = listStyle.GetFrameSize()
+		m.environmentList.SetWidth(m.screenWidth - h)
+		m.environmentList.SetHeight(m.screenHeight - v - 1)
+
 	case NewMachineMsg:
 		m.screenType = 3
 
@@ -145,7 +188,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				huh.NewSelect[string]().
 					Title("Choose Machine Type").
 					Options(
-						huh.NewOption("Server", "lettuce"),
+						huh.NewOption("Server", "workload"),
 						huh.NewOption("Local Machine", "local_machine"),
 					).
 					Value(&newMachineTypes),
@@ -154,9 +197,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Title("Machine Name").
 					Value(&newMachineName).
 					Validate(func(str string) error {
-						if str == "Frank" {
-							return errors.New("Sorry, we don’t serve customers named Frank.")
-						}
+						/*if str == "Frank" {
+						}*/
 						return nil
 					}),
 				huh.NewConfirm().
@@ -176,6 +218,105 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.newMachineForm.Init()
 
+	case NewServiceMsg:
+		m.screenType = 7
+
+		newServiceName = ""
+		newServiceGitURL = ""
+		newServiceIsAdd = true
+		m.newServiceForm = huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Service Name").
+					Value(&newServiceName).
+					Validate(func(str string) error {
+						/*if str == "Frank" {
+						}*/
+						return nil
+					}),
+				huh.NewInput().
+					Title("Git clone URL").
+					Placeholder("get@...for private repos and https://... for public repos").
+					Value(&newServiceGitURL).
+					Validate(func(str string) error {
+						/*if str == "Frank" {
+						}*/
+						return nil
+					}),
+				huh.NewConfirm().
+					Key("done").
+					Title("Add a new service?").
+					Validate(func(v bool) error {
+						if !v {
+							m.screenType = 1
+						}
+						return nil
+					}).
+					Affirmative("Add").
+					Negative("Cancel").
+					Value(&newServiceIsAdd),
+			),
+		)
+
+		m.newServiceForm.Init()
+
+	case NewEnvironmentMsg:
+		m.screenType = 8
+
+		m.newEnvironmentForm = huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Environment Name").
+					Value(&newServiceName).
+					Validate(func(str string) error {
+						/*if str == "Frank" {
+						}*/
+						return nil
+					}),
+				huh.NewInput().
+					Title("Branch").
+					Placeholder("main, master, dev, etc").
+					Value(&newServiceGitURL).
+					Validate(func(str string) error {
+						/*if str == "Frank" {
+						}*/
+						return nil
+					}),
+				huh.NewInput().
+					Title("Port").
+					Placeholder("4008, 5005, etc").
+					Value(&newServiceGitURL).
+					Validate(func(str string) error {
+						/*if str == "Frank" {
+						}*/
+						return nil
+					}),
+				huh.NewInput().
+					Title("Domain").
+					Placeholder("Without https - for example, project.com").
+					Value(&newServiceGitURL).
+					Validate(func(str string) error {
+						/*if str == "Frank" {
+						}*/
+						return nil
+					}),
+				huh.NewConfirm().
+					Key("done").
+					Title("Add a new environment?").
+					Validate(func(v bool) error {
+						if !v {
+							m.screenType = 1
+						}
+						return nil
+					}).
+					Affirmative("Add").
+					Negative("Cancel").
+					Value(&newServiceIsAdd),
+			),
+		)
+
+		m.newEnvironmentForm.Init()
+
 	case NewMachineJoinURLMsg:
 		m.screenType = 4
 
@@ -183,9 +324,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			huh.NewGroup(
 				huh.NewNote().
 					Title("Connect a new machine to VPN").
-					Description("• SSH into a server\n• Run a command:\n\n    curl turbocloud.dev/setup\n\n• After a server has finished provision you will see status Online near that machine in Machines\n\n").
+					Description("• SSH into the new machine\n• Run the following command:\n\n    curl https://raw.githubusercontent.com/turbocloud-dev/turbocloud-agent/refs/heads/main/scripts/turbocloud-server-setup.sh | sh -s -- -j https://" + msg.newMachine.JoinURL + "\n\n• Once provisioning is complete, the status will show as 'Online' next to the machine in the Machines list.\n\n").
 					Next(true).
-					NextLabel("OK"),
+					NextLabel("OK").Height(20),
 			),
 		)
 
@@ -196,7 +337,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// tell the Bubble Tea runtime we want to exit because we have nothing
 		// else to do. We'll still be able to render a final view with our
 		// status message.
-		m.machineMsg = msg
 		m.screenType = 2
 
 		//Reload machine list
@@ -214,7 +354,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		//{"1", "Tokyo", "Japan", "37,274,000"}
 		rows := []table.Row{}
 
-		for _, machine := range m.machineMsg {
+		for _, machine := range msg {
 			var tableRow []string
 			tableRow = append(tableRow, machine.Id)
 			tableRow = append(tableRow, machine.Name)
@@ -255,6 +395,111 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, nil
 
+	case ServicesMsg:
+		// The server returned a status message. Save it to our model. Also
+		// tell the Bubble Tea runtime we want to exit because we have nothing
+		// else to do. We'll still be able to render a final view with our
+		// status message.
+		m.screenType = 5
+
+		//Reload machine list
+
+		columns := []table.Column{
+			{Title: "ID", Width: 8},
+			{Title: "Name", Width: 16},
+			{Title: "GitURL", Width: 50},
+		}
+		//{"1", "Tokyo", "Japan", "37,274,000"}
+		rows := []table.Row{}
+
+		for _, service := range msg {
+			var tableRow []string
+			tableRow = append(tableRow, service.Id)
+			tableRow = append(tableRow, service.Name)
+			tableRow = append(tableRow, service.GitURL)
+
+			rows = append(rows, tableRow)
+		}
+
+		t := table.New(
+			table.WithColumns(columns),
+			table.WithRows(rows),
+			table.WithFocused(true),
+			table.WithHeight(20),
+		)
+
+		s := table.DefaultStyles()
+		s.Header = s.Header.
+			BorderStyle(lipgloss.HiddenBorder()).
+			BorderForeground(lipgloss.Color("240")).
+			BorderBottom(true).
+			Bold(false)
+		s.Selected = s.Selected.
+			Foreground(lipgloss.Color("255")).
+			Background(lipgloss.Color("#bfbfbf")).
+			Bold(true)
+		s.Cell = s.Cell.Height(1)
+		t.SetStyles(s)
+
+		m.serviceList = t
+		h, v := listStyle.GetFrameSize()
+		m.serviceList.SetWidth(m.screenWidth - h)
+		m.serviceList.SetHeight(m.screenHeight - v)
+
+		return m, nil
+
+	case EnvironmentsMsg:
+		// The server returned a status message. Save it to our model. Also
+		// tell the Bubble Tea runtime we want to exit because we have nothing
+		// else to do. We'll still be able to render a final view with our
+		// status message.
+		m.screenType = 6
+
+		//Reload machine list
+
+		columns := []table.Column{
+			{Title: "ID", Width: 8},
+			{Title: "Name", Width: 16},
+			{Title: "Branch", Width: 16},
+		}
+		rows := []table.Row{}
+
+		for _, environment := range msg {
+			var tableRow []string
+			tableRow = append(tableRow, environment.Id)
+			tableRow = append(tableRow, environment.Name)
+			tableRow = append(tableRow, environment.Branch)
+
+			rows = append(rows, tableRow)
+		}
+
+		t := table.New(
+			table.WithColumns(columns),
+			table.WithRows(rows),
+			table.WithFocused(true),
+			table.WithHeight(20),
+		)
+
+		s := table.DefaultStyles()
+		s.Header = s.Header.
+			BorderStyle(lipgloss.HiddenBorder()).
+			BorderForeground(lipgloss.Color("240")).
+			BorderBottom(true).
+			Bold(false)
+		s.Selected = s.Selected.
+			Foreground(lipgloss.Color("255")).
+			Background(lipgloss.Color("#bfbfbf")).
+			Bold(true)
+		s.Cell = s.Cell.Height(1)
+		t.SetStyles(s)
+
+		m.environmentList = t
+		h, v := listStyle.GetFrameSize()
+		m.environmentList.SetWidth(m.screenWidth - h)
+		m.environmentList.SetHeight(m.screenHeight - v - 1)
+
+		return m, nil
+
 	case tea.KeyMsg:
 		// Don't match any of the keys below if we're actively filtering.
 		if m.list.FilterState() == list.Filtering {
@@ -264,10 +509,46 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// These keys should exit the program.
 		case "esc":
-			if m.screenType == 2 || m.screenType == 3 {
+			if m.screenType == 2 || m.screenType == 3 || m.screenType == 5 {
 				m.screenType = 1
-				m.newMachineForm.State = huh.StateNormal
+				if m.newMachineForm != nil {
+					m.newMachineForm.State = huh.StateNormal
+				}
 				return m, nil
+			}
+			if m.screenType == 6 {
+				m.screenType = 5
+				return m, nil
+			}
+			if m.screenType == 7 {
+				if m.newServiceForm != nil {
+					m.newServiceForm.State = huh.StateNormal
+				}
+				m.screenType = 1
+				return m, nil
+			}
+			if m.screenType == 8 {
+				if m.newEnvironmentForm != nil {
+					m.newEnvironmentForm.State = huh.StateNormal
+				}
+				m.screenType = 1
+				return m, nil
+			}
+		case "left":
+			if m.screenType == 2 || m.screenType == 5 {
+				m.screenType = 1
+				return m, nil
+			}
+			if m.screenType == 6 {
+				m.screenType = 5
+				return m, nil
+			}
+		case "enter":
+			if m.screenType == 5 {
+				//A service has been selected
+				m.selectedService.Id = m.serviceList.SelectedRow()[0]
+				m.selectedService.Name = m.serviceList.SelectedRow()[1]
+				return m, getEnvironments(m.selectedService.Id)
 			}
 		case "ctrl+c", "q":
 			return m, tea.Quit
@@ -288,6 +569,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 	}
 
+	if m.screenType == 5 {
+		m.serviceList, cmd = m.serviceList.Update(msg)
+		cmds = append(cmds, cmd)
+	}
+
+	if m.screenType == 6 {
+		m.environmentList, cmd = m.environmentList.Update(msg)
+		cmds = append(cmds, cmd)
+	}
+
 	if m.screenType == 3 {
 		form, cmd := m.newMachineForm.Update(msg)
 		if f, ok := form.(*huh.Form); ok {
@@ -303,6 +594,52 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.newMachineForm.State = huh.StateNormal
 			if newMachineIsAdd {
 				cmds = append(cmds, newMachineJoinURLMsg)
+			} else {
+				m.screenType = 1
+			}
+		}
+
+	}
+
+	if m.screenType == 7 {
+		form, cmd := m.newServiceForm.Update(msg)
+		if f, ok := form.(*huh.Form); ok {
+			m.newServiceForm = f
+		}
+
+		cmds = append(cmds, cmd)
+
+		if m.newServiceForm.State == huh.StateAborted {
+			m.newServiceForm.State = huh.StateNormal
+			m.screenType = 1
+		} else if m.newServiceForm.State == huh.StateCompleted {
+			m.newServiceForm.State = huh.StateNormal
+			if newServiceIsAdd {
+				cmds = append(cmds, newEnvironmentMsg)
+			} else {
+				m.screenType = 1
+			}
+		}
+
+	}
+
+	if m.screenType == 8 {
+		form, cmd := m.newEnvironmentForm.Update(msg)
+		if f, ok := form.(*huh.Form); ok {
+			m.newEnvironmentForm = f
+		}
+
+		cmds = append(cmds, cmd)
+
+		if m.newEnvironmentForm.State == huh.StateAborted {
+			m.newEnvironmentForm.State = huh.StateNormal
+			m.screenType = 1
+		} else if m.newEnvironmentForm.State == huh.StateCompleted {
+			m.newEnvironmentForm.State = huh.StateNormal
+			if newServiceIsAdd {
+				//cmds = append(cmds, newEnvironmentMsg)
+				m.screenType = 1
+
 			} else {
 				m.screenType = 1
 			}
@@ -332,26 +669,33 @@ func (m model) View() string {
 	case 1:
 		return appStyle.Render(m.list.View())
 	case 2:
-		return breadhumbPositionStyle.Render(breadhumbStyle.Render("TurboCloud > Machines")) + topHintPositionStyle.Render(topHintStyle.Render("Press Enter to select a machine\nPress ← or ESC to return to main menu")) + baseStyle.Render(m.machineList.View()) + "\n  " + m.machineList.HelpView() + "\n"
+		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Machines")) + topHintPositionStyle.Render(topHintStyle.Render("Press Enter to select a machine\nPress ← or ESC to return to main menu")) + baseStyle.Render(m.machineList.View()) + "\n  " + m.machineList.HelpView() + "\n"
 	case 3:
 		{
-			if m.newMachineForm.State == huh.StateCompleted {
-
-				//class := m.newMachineForm.GetString("class")
-				//level := m.newMachineForm.GetString("level")
-				//return fmt.Sprintf("You selected: %s, Lvl. %d", class, level)
-			}
-			return breadhumbPositionStyle.Render(breadhumbStyle.Render("TurboCloud > Add Machine")) + topHintPositionStyle.Render(topHintStyle.Render("Press X or Space to select options\nPress Enter to confirm\nPress ESC to return to main menu")) + baseStyle.Render(m.newMachineForm.View()) + "\n"
+			/*if m.newMachineForm.State == huh.StateCompleted {
+			}*/
+			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Add Machine")) + topHintPositionStyle.Render(topHintStyle.Render("Press X or Space to select options\nPress Enter to confirm\nPress ESC to return to main menu")) + baseStyle.Render(m.newMachineForm.View()) + "\n"
 		}
 	case 4:
 		{
-			if m.newMachineForm.State == huh.StateCompleted {
+			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Add Machine")) + topHintPositionStyle.Render(topHintStyle.Render("Press ESC to return to main menu")) + baseStyle.Render(m.newMachineJoinURLForm.View()) + "\n"
+		}
+	case 5:
+		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Services")) + topHintPositionStyle.Render(topHintStyle.Render("Press N to add a service\nPress Enter to select a service\nPress ← or ESC to return to main menu")) + baseStyle.Render(m.serviceList.View()) + "\n  " + m.serviceList.HelpView() + "\n"
+	case 6:
+		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Services > "+m.selectedService.Name)) + topHintPositionStyle.Render(topHintStyle.Render("Press N to add an environment\nPress Enter to select an environment\nPress E to edit/delete this service\nPress ← or ESC to return to Services")) + baseStyle.Render(m.environmentList.View()) + "\n  " + m.environmentList.HelpView() + "\n"
+	case 7:
+		{
+			/*if m.newMachineForm.State == huh.StateCompleted {
+			}*/
+			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Add Service")) + topHintPositionStyle.Render(topHintStyle.Render("Press X or Space to select options\nPress Enter to confirm\nPress ESC to return to main menu")) + baseStyle.Render(m.newServiceForm.View()) + "\n"
+		}
 
-				//class := m.newMachineForm.GetString("class")
-				//level := m.newMachineForm.GetString("level")
-				//return fmt.Sprintf("You selected: %s, Lvl. %d", class, level)
-			}
-			return breadhumbPositionStyle.Render(breadhumbStyle.Render("TurboCloud > Add Machine")) + topHintPositionStyle.Render(topHintStyle.Render("Press ESC to return to main menu")) + baseStyle.Render(m.newMachineJoinURLForm.View()) + "\n"
+	case 8:
+		{
+			/*if m.newMachineForm.State == huh.StateCompleted {
+			}*/
+			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Add Environment")) + topHintPositionStyle.Render(topHintStyle.Render("Press X or Space to select options\nPress Enter to confirm\nPress ESC to return to main menu")) + baseStyle.Render(m.newEnvironmentForm.View()) + "\n"
 		}
 	}
 
