@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/huh"
 )
 
 const baseUrl = "http://localhost:5445/"
@@ -53,6 +55,16 @@ func getMachines() tea.Msg {
 	}
 
 	return machineMsg
+}
+
+func getMachineOptions() []huh.Option[string] {
+	machines := getMachines().(MachineMsg) //type asssertion
+	opts := []string{}
+	for _, machine := range machines {
+		opts = append(opts, machine.Name)
+	}
+	return huh.NewOptions(opts...)
+
 }
 
 func postMachine(newMachineName string, newMachineTypes string) Machine {
@@ -228,6 +240,67 @@ func getEnvironments(serviceId string) tea.Cmd {
 			return errMsg{err}
 		}
 		return environmentsMsg
+	}
+
+}
+
+type NewEnvironmentAddedMsg Environment
+
+func postEnvironment(newEnvironment Environment) tea.Cmd {
+
+	return func() tea.Msg {
+		var environment NewEnvironmentAddedMsg
+
+		// Create an HTTP client and make a GET request.
+		c := &http.Client{Timeout: 10 * time.Second}
+
+		// JSON body
+		scriptTemplate := createTemplate("environment", `{
+			"ServiceId":"{{.SERVICE_ID}}",
+			"Name":"{{.ENV_NAME}}",
+			"Branch":"{{.ENV_BRANCH}}",
+			"GitTag":"{{.ENV_TAG}}",
+			"Domains":["{{.ENV_DOMAIN}}"],
+			"Port":"{{.ENV_PORT}}",
+			"MachineIds":["{{.MACHINE_IDS}}"]
+	}`)
+
+		var bodyBytes bytes.Buffer
+		templateData := map[string]string{
+			"SERVICE_ID":  newEnvironment.ServiceId,
+			"ENV_NAME":    newEnvironment.Name,
+			"ENV_BRANCH":  newEnvironment.Branch,
+			"ENV_TAG":     newEnvironment.GitTag,
+			"ENV_DOMAIN":  newEnvironment.Domains[0], //currently we can add only one domain during environment creation
+			"ENV_PORT":    newEnvironment.Port,
+			"MACHINE_IDS": strings.Join(newEnvironment.MachineIds, `","`),
+		}
+
+		if err := scriptTemplate.Execute(&bodyBytes, templateData); err != nil {
+			fmt.Println("Cannot execute template for Caddyfile:", err)
+		}
+
+		res, err := c.Post(baseUrl+"environment", "application/json", bytes.NewBuffer(bodyBytes.Bytes()))
+
+		if err != nil {
+			// There was an error making our request. Wrap the error we received
+			// in a message and return it.
+			return environment
+		}
+
+		defer res.Body.Close()
+
+		// We received a response from the server. Return the HTTP status code
+		// as a message.
+		dec := json.NewDecoder(res.Body)
+
+		if err := dec.Decode(&environment); err == io.EOF {
+			return environment
+		} else if err != nil {
+			return environment
+		}
+
+		return environment
 	}
 
 }

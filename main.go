@@ -67,7 +67,8 @@ type model struct {
 	environmentList table.Model
 
 	//New environment
-	newEnvironmentForm *huh.Form
+	newEnvironmentForm      *huh.Form
+	newEnvironmentAddedForm *huh.Form
 
 	screenType   int
 	screenWidth  int
@@ -93,6 +94,15 @@ var (
 	newServiceName   string
 	newServiceGitURL string
 	newServiceIsAdd  bool
+)
+
+var (
+	newEnvironmentName       string
+	newEnvironmentBranchName string
+	newEnvironmentIsAdd      bool
+	newEnvironmentPort       string
+	newEnvironmentDomain     string
+	newEnvironmentMachines   []string
 )
 
 type NewMachineJoinURLMsg struct {
@@ -263,11 +273,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case NewEnvironmentMsg:
 		m.screenType = 8
 
+		newEnvironmentName = ""
+		newEnvironmentBranchName = ""
+		newEnvironmentIsAdd = true
+		newEnvironmentPort = ""
+		newEnvironmentDomain = ""
+		newEnvironmentMachines = newEnvironmentMachines[:0]
+
+		machineOptions := getMachineOptions()
+
+		m.selectedService.Id = msg.service.Id
+		m.selectedService.Name = msg.service.Name
+
 		m.newEnvironmentForm = huh.NewForm(
 			huh.NewGroup(
 				huh.NewInput().
 					Title("Environment Name").
-					Value(&newServiceName).
+					Value(&newEnvironmentName).
 					Validate(func(str string) error {
 						/*if str == "Frank" {
 						}*/
@@ -276,7 +298,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				huh.NewInput().
 					Title("Branch").
 					Placeholder("main, master, dev, etc").
-					Value(&newServiceGitURL).
+					Value(&newEnvironmentBranchName).
 					Validate(func(str string) error {
 						/*if str == "Frank" {
 						}*/
@@ -285,7 +307,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				huh.NewInput().
 					Title("Port").
 					Placeholder("4008, 5005, etc").
-					Value(&newServiceGitURL).
+					Value(&newEnvironmentPort).
 					Validate(func(str string) error {
 						/*if str == "Frank" {
 						}*/
@@ -294,12 +316,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				huh.NewInput().
 					Title("Domain").
 					Placeholder("Without https - for example, project.com").
-					Value(&newServiceGitURL).
+					Value(&newEnvironmentDomain).
 					Validate(func(str string) error {
 						/*if str == "Frank" {
 						}*/
 						return nil
 					}),
+				huh.NewMultiSelect[string]().
+					Title("Choose Servers to Deploy").
+					Value(&newEnvironmentMachines).
+					Options(machineOptions...),
 				huh.NewConfirm().
 					Key("done").
 					Title("Add a new environment?").
@@ -311,11 +337,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}).
 					Affirmative("Add").
 					Negative("Cancel").
-					Value(&newServiceIsAdd),
+					Value(&newEnvironmentIsAdd),
 			),
 		)
 
 		m.newEnvironmentForm.Init()
+
+	case NewEnvironmentAddedMsg:
+		m.screenType = 9
+
+		m.newEnvironmentAddedForm = huh.NewForm(
+			huh.NewGroup(
+				huh.NewNote().
+					Title("Environment has been added").
+					Description("Options to deploy:\n\n• Push any changes to the branch you specified in the previous step.\n• Send a GET request to https://{lighthouse.domain}/deploy/environment/:environment_id\n\nTo manage environments, go to Services and select a service from the list.\n\n").
+					Next(true).
+					NextLabel("OK").Height(22),
+			),
+		)
+
+		m.newEnvironmentAddedForm.Init()
 
 	case NewMachineJoinURLMsg:
 		m.screenType = 4
@@ -636,9 +677,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.screenType = 1
 		} else if m.newEnvironmentForm.State == huh.StateCompleted {
 			m.newEnvironmentForm.State = huh.StateNormal
-			if newServiceIsAdd {
-				//cmds = append(cmds, newEnvironmentMsg)
-				m.screenType = 1
+			if newEnvironmentIsAdd {
+				//Send a request to create a new environment
+				var newEnvironment Environment
+				newEnvironment.ServiceId = m.selectedService.Id
+				newEnvironment.Name = newEnvironmentName
+				newEnvironment.Branch = newEnvironmentBranchName
+				newEnvironment.Domains = append(newEnvironment.Domains, newEnvironmentDomain)
+				newEnvironment.GitTag = ""
+				newEnvironment.MachineIds = newEnvironmentMachines
+				cmds = append(cmds, postEnvironment(newEnvironment))
 
 			} else {
 				m.screenType = 1
@@ -656,6 +704,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 
 		if m.newMachineJoinURLForm.State == huh.StateCompleted {
+			m.screenType = 1
+		}
+
+	}
+
+	if m.screenType == 9 {
+		form, cmd := m.newEnvironmentAddedForm.Update(msg)
+		if f, ok := form.(*huh.Form); ok {
+			m.newEnvironmentAddedForm = f
+		}
+
+		cmds = append(cmds, cmd)
+
+		if m.newEnvironmentAddedForm.State == huh.StateCompleted {
 			m.screenType = 1
 		}
 
@@ -696,6 +758,10 @@ func (m model) View() string {
 			/*if m.newMachineForm.State == huh.StateCompleted {
 			}*/
 			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Add Environment")) + topHintPositionStyle.Render(topHintStyle.Render("Press X or Space to select options\nPress Enter to confirm\nPress ESC to return to main menu")) + baseStyle.Render(m.newEnvironmentForm.View()) + "\n"
+		}
+	case 9:
+		{
+			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Add Environment")) + topHintPositionStyle.Render(topHintStyle.Render("Press ESC to return to main menu")) + baseStyle.Render(m.newEnvironmentAddedForm.View()) + "\n"
 		}
 	}
 
