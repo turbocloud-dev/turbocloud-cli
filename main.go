@@ -436,9 +436,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			{Title: "VPN Ip", Width: 18},
 			{Title: "Public Ip", Width: 18},
 			{Title: "Status", Width: 10},
-			{Title: "CPU", Width: 10},
-			{Title: "RAM", Width: 10},
-			{Title: "Disk", Width: 10},
+			{Title: "CPU(%)", Width: 8},
+			{Title: "RAM(MB)", Width: 9},
+			{Title: "Disk(MB)", Width: 9},
 		}
 		//{"1", "Tokyo", "Japan", "37,274,000"}
 		rows := []table.Row{}
@@ -450,9 +450,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			tableRow = append(tableRow, machine.VPNIp)
 			tableRow = append(tableRow, machine.PublicIp)
 			tableRow = append(tableRow, machine.Status)
-			tableRow = append(tableRow, "34%")
-			tableRow = append(tableRow, "12GB")
-			tableRow = append(tableRow, "24GB")
+			tableRow = append(tableRow, machine.CPUUsage)
+			tableRow = append(tableRow, machine.MEMUsage)
+			tableRow = append(tableRow, machine.DiskUsage)
 
 			rows = append(rows, tableRow)
 		}
@@ -482,7 +482,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.machineList.SetWidth(m.screenWidth - h)
 		m.machineList.SetHeight(m.screenHeight - v)
 
-		return m, nil
+		cmd := tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+			if screenType == 2 {
+				return getMachines()
+			} else {
+				return TickMsg(t)
+			}
+		})
+		cmds = append(cmds, cmd)
 
 	case ServicesMsg:
 		// The server returned a status message. Save it to our model. Also
@@ -733,8 +740,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				newEnvironment.Name = newEnvironmentName
 				newEnvironment.Branch = newEnvironmentBranchName
 				newEnvironment.Domains = append(newEnvironment.Domains, newEnvironmentDomain)
+				newEnvironment.Port = newEnvironmentPort
 				newEnvironment.GitTag = ""
-				newEnvironment.MachineIds = newEnvironmentMachines
+				//Get Machine Ids to deploy
+				machines := getMachines().(MachineMsg) //type asssertion
+				machineIds := []string{}
+
+				for _, machine := range machines {
+					if slices.Contains(newEnvironmentMachines, machine.Name) {
+						machineIds = append(machineIds, machine.Id)
+					}
+				}
+				newEnvironment.MachineIds = machineIds
 				cmds = append(cmds, postEnvironment(newEnvironment))
 
 			} else {

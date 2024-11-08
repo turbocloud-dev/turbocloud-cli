@@ -26,6 +26,19 @@ type Machine struct {
 	Domains        []string
 	JoinURL        string
 	PublicSSHKey   string
+	CPUUsage       string
+	MEMUsage       string
+	DiskUsage      string
+}
+
+type MachineStats struct {
+	Id              string
+	MachineId       string
+	CPUUsage        int64
+	AvailableMemory int64
+	TotalMemory     int64
+	AvailableDisk   int64
+	TotalDisk       int64
 }
 
 /*Machines*/
@@ -54,7 +67,47 @@ func getMachines() tea.Msg {
 		return errMsg{err}
 	}
 
+	machinesStats := getMachineStates()
+
+	for _, machineStats := range machinesStats {
+		for index := range machineMsg {
+			if machineStats.MachineId == machineMsg[index].Id {
+				machineMsg[index].CPUUsage = fmt.Sprintf("%d", machineStats.CPUUsage)
+				machineMsg[index].MEMUsage = fmt.Sprintf("%d", machineStats.AvailableMemory)
+				machineMsg[index].DiskUsage = fmt.Sprintf("%d", machineStats.AvailableDisk/(1024*1024))
+			}
+		}
+	}
+
 	return machineMsg
+}
+
+func getMachineStates() []MachineStats {
+
+	var machineStats []MachineStats
+	// Create an HTTP client and make a GET request.
+	c := &http.Client{Timeout: 10 * time.Second}
+	res, err := c.Get(baseUrl + "machine/stats")
+
+	if err != nil {
+		// There was an error making our request. Wrap the error we received
+		// in a message and return it.
+		return machineStats
+	}
+
+	defer res.Body.Close()
+
+	// We received a response from the server. Return the HTTP status code
+	// as a message.
+	dec := json.NewDecoder(res.Body)
+
+	if err := dec.Decode(&machineStats); err == io.EOF {
+		return machineStats
+	} else if err != nil {
+		return machineStats
+	}
+
+	return machineStats
 }
 
 func getMachineOptions() []huh.Option[string] {
