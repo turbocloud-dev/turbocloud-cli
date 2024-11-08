@@ -3,6 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"runtime"
+	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/table"
@@ -38,6 +41,14 @@ var (
 	statusMessageStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.AdaptiveColor{Light: "#04B575", Dark: "#04B575"}).
 				Render
+
+		//New machine styles
+
+	newMachineHintTitleStyle = lipgloss.NewStyle().
+					Foreground(lipgloss.AdaptiveColor{Light: "#5A56E0", Dark: "#7571F9"})
+
+	codeHintStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.AdaptiveColor{Light: "#e07a5f", Dark: "#e07a5f"})
 )
 
 type item struct {
@@ -48,6 +59,8 @@ type item struct {
 func (i item) Title() string       { return i.title }
 func (i item) Description() string { return i.description }
 func (i item) FilterValue() string { return i.title }
+
+var screenType = 1
 
 type model struct {
 	list         list.Model
@@ -70,19 +83,19 @@ type model struct {
 	newEnvironmentForm      *huh.Form
 	newEnvironmentAddedForm *huh.Form
 
-	screenType   int
 	screenWidth  int
 	screenHeight int
 
 	//New machine
-	newMachineForm        *huh.Form
-	newMachineJoinURLForm *huh.Form
+	newMachineForm     *huh.Form
+	newMachineJoinHint string
+	newMachineMenu     list.Model
 }
 
 var baseStyle = lipgloss.NewStyle().
 	BorderStyle(lipgloss.HiddenBorder()).
 	BorderForeground(lipgloss.Color("240")).
-	Padding(0, 2)
+	Padding(2, 0)
 
 var (
 	newMachineTypes string
@@ -104,6 +117,15 @@ var (
 	newEnvironmentDomain     string
 	newEnvironmentMachines   []string
 )
+
+type TickMsg time.Time
+
+type MainMenuMsg int
+
+func mainMenuMsg() tea.Msg {
+	var msg MainMenuMsg
+	return msg
+}
 
 type NewMachineJoinURLMsg struct {
 	newMachine Machine
@@ -150,10 +172,22 @@ func newModel() model {
 	mainMenu.Styles.Title = titleStyle
 	mainMenu.SetShowStatusBar(false)
 
+	items = []list.Item{
+		item{title: "Copy Setup Command"},
+		item{title: "Go to Main Menu"},
+	}
+
+	// Setup list
+	newMachineMenu := list.New(items, itemDelegate{}, defaultWidth, listHeight)
+	newMachineMenu.SetShowTitle(false)
+	newMachineMenu.SetShowStatusBar(false)
+	newMachineMenu.SetShowHelp(false)
+	newMachineMenu.SetShowFilter(false)
+
 	model := model{
-		list:         mainMenu,
-		delegateKeys: delegateKeys,
-		screenType:   1,
+		list:           mainMenu,
+		delegateKeys:   delegateKeys,
+		newMachineMenu: newMachineMenu,
 	}
 
 	return model
@@ -167,13 +201,14 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
-
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.screenWidth = msg.Width
 		m.screenHeight = msg.Height
 		h, v := appStyle.GetFrameSize()
 		m.list.SetSize(msg.Width-h, msg.Height-v)
+
+		m.newMachineMenu.SetSize(msg.Width-4, 8)
 
 		h, v = listStyle.GetFrameSize()
 		m.machineList.SetWidth(m.screenWidth - h)
@@ -187,8 +222,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.environmentList.SetWidth(m.screenWidth - h)
 		m.environmentList.SetHeight(m.screenHeight - v - 1)
 
+	case MainMenuMsg:
+		screenType = 1
+
 	case NewMachineMsg:
-		m.screenType = 3
+		screenType = 3
 
 		newMachineTypes = "" //newMachineTypes[:0]
 		newMachineName = ""
@@ -216,7 +254,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Title("Add a new machine?").
 					Validate(func(v bool) error {
 						if !v {
-							m.screenType = 1
+							screenType = 1
 						}
 						return nil
 					}).
@@ -229,7 +267,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.newMachineForm.Init()
 
 	case NewServiceMsg:
-		m.screenType = 7
+		screenType = 7
 
 		newServiceName = ""
 		newServiceGitURL = ""
@@ -258,7 +296,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Title("Add a new service?").
 					Validate(func(v bool) error {
 						if !v {
-							m.screenType = 1
+							screenType = 1
 						}
 						return nil
 					}).
@@ -271,7 +309,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.newServiceForm.Init()
 
 	case NewEnvironmentMsg:
-		m.screenType = 8
+		screenType = 8
 
 		newEnvironmentName = ""
 		newEnvironmentBranchName = ""
@@ -315,7 +353,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}),
 				huh.NewInput().
 					Title("Domain").
-					Placeholder("Without https - for example, project.com").
+					Placeholder("Without HTTPS—for example, project.com—the DNS A record for that domain or subdomain should resolve to the IP address of the load balancer machine").
 					Value(&newEnvironmentDomain).
 					Validate(func(str string) error {
 						/*if str == "Frank" {
@@ -331,7 +369,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Title("Add a new environment?").
 					Validate(func(v bool) error {
 						if !v {
-							m.screenType = 1
+							screenType = 1
 						}
 						return nil
 					}).
@@ -344,7 +382,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.newEnvironmentForm.Init()
 
 	case NewEnvironmentAddedMsg:
-		m.screenType = 9
+		screenType = 9
 
 		m.newEnvironmentAddedForm = huh.NewForm(
 			huh.NewGroup(
@@ -359,26 +397,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.newEnvironmentAddedForm.Init()
 
 	case NewMachineJoinURLMsg:
-		m.screenType = 4
 
-		m.newMachineJoinURLForm = huh.NewForm(
-			huh.NewGroup(
-				huh.NewNote().
-					Title("Connect a new machine to VPN").
-					Description("• SSH into the new machine\n• Run the following command:\n\n    curl https://raw.githubusercontent.com/turbocloud-dev/turbocloud-agent/refs/heads/main/scripts/turbocloud-server-setup.sh | sh -s -- -j https://" + msg.newMachine.JoinURL + "\n\n• Once provisioning is complete, the status will show as 'Online' next to the machine in the Machines list.\n\n").
-					Next(true).
-					NextLabel("OK").Height(20),
-			),
-		)
+		screenType = 4
 
-		m.newMachineJoinURLForm.Init()
+		m.newMachineJoinHint = "    • SSH into the new machine\n    • Copy and run the following command (shown only once):\n\n" + codeHintStyle.Render("    curl https://raw.githubusercontent.com/turbocloud-dev/turbocloud-agent/refs/heads/main/scripts/turbocloud-server-setup.sh | sh -s -- -j https://"+msg.newMachine.JoinURL) + "\n\n    • Once provisioning is complete, the status will show as 'Online' next to the machine in the Machines list.\n\n"
+		cmd := tea.Tick(100*time.Microsecond, func(t time.Time) tea.Msg {
+			return TickMsg(t)
+		})
+		cmds = append(cmds, cmd)
 
 	case MachineMsg:
 		// The server returned a status message. Save it to our model. Also
 		// tell the Bubble Tea runtime we want to exit because we have nothing
 		// else to do. We'll still be able to render a final view with our
 		// status message.
-		m.screenType = 2
+		screenType = 2
 
 		//Reload machine list
 
@@ -441,7 +474,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// tell the Bubble Tea runtime we want to exit because we have nothing
 		// else to do. We'll still be able to render a final view with our
 		// status message.
-		m.screenType = 5
+		screenType = 5
 
 		//Reload machine list
 
@@ -494,7 +527,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// tell the Bubble Tea runtime we want to exit because we have nothing
 		// else to do. We'll still be able to render a final view with our
 		// status message.
-		m.screenType = 6
+		screenType = 6
 
 		//Reload machine list
 
@@ -550,77 +583,78 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// These keys should exit the program.
 		case "esc":
-			if m.screenType == 2 || m.screenType == 3 || m.screenType == 5 {
-				m.screenType = 1
+			if screenType == 2 || screenType == 3 || screenType == 5 {
+				screenType = 1
 				if m.newMachineForm != nil {
 					m.newMachineForm.State = huh.StateNormal
 				}
 				return m, nil
 			}
-			if m.screenType == 6 {
-				m.screenType = 5
+			if screenType == 6 {
+				screenType = 5
 				return m, nil
 			}
-			if m.screenType == 7 {
+			if screenType == 7 {
 				if m.newServiceForm != nil {
 					m.newServiceForm.State = huh.StateNormal
 				}
-				m.screenType = 1
+				screenType = 1
 				return m, nil
 			}
-			if m.screenType == 8 {
+			if screenType == 8 {
 				if m.newEnvironmentForm != nil {
 					m.newEnvironmentForm.State = huh.StateNormal
 				}
-				m.screenType = 1
+				screenType = 1
 				return m, nil
 			}
 		case "left":
-			if m.screenType == 2 || m.screenType == 5 {
-				m.screenType = 1
+			if screenType == 2 || screenType == 5 {
+				screenType = 1
 				return m, nil
 			}
-			if m.screenType == 6 {
-				m.screenType = 5
+			if screenType == 6 {
+				screenType = 5
 				return m, nil
 			}
 		case "enter":
-			if m.screenType == 5 {
+			if screenType == 5 {
 				//A service has been selected
 				m.selectedService.Id = m.serviceList.SelectedRow()[0]
 				m.selectedService.Name = m.serviceList.SelectedRow()[1]
 				return m, getEnvironments(m.selectedService.Id)
 			}
-		case "ctrl+c", "q":
+		case "ctrl+c":
 			return m, tea.Quit
+
 		}
 
 	}
 
 	// This will also call our delegate's update function.
-	if m.screenType == 1 {
+	if screenType == 1 {
 		newListModel, cmd := m.list.Update(msg)
 		m.list = newListModel
 		cmds = append(cmds, cmd)
 
 	}
 
-	if m.screenType == 2 {
+	if screenType == 2 {
 		m.machineList, cmd = m.machineList.Update(msg)
 		cmds = append(cmds, cmd)
 	}
 
-	if m.screenType == 5 {
+	if screenType == 5 {
 		m.serviceList, cmd = m.serviceList.Update(msg)
 		cmds = append(cmds, cmd)
 	}
 
-	if m.screenType == 6 {
+	if screenType == 6 {
 		m.environmentList, cmd = m.environmentList.Update(msg)
 		cmds = append(cmds, cmd)
 	}
 
-	if m.screenType == 3 {
+	if screenType == 3 {
 		form, cmd := m.newMachineForm.Update(msg)
 		if f, ok := form.(*huh.Form); ok {
 			m.newMachineForm = f
@@ -630,19 +664,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.newMachineForm.State == huh.StateAborted {
 			m.newMachineForm.State = huh.StateNormal
-			m.screenType = 1
+			screenType = 1
 		} else if m.newMachineForm.State == huh.StateCompleted {
 			m.newMachineForm.State = huh.StateNormal
 			if newMachineIsAdd {
 				cmds = append(cmds, newMachineJoinURLMsg)
 			} else {
-				m.screenType = 1
+				screenType = 1
 			}
 		}
 
 	}
 
-	if m.screenType == 7 {
+	if screenType == 7 {
 		form, cmd := m.newServiceForm.Update(msg)
 		if f, ok := form.(*huh.Form); ok {
 			m.newServiceForm = f
@@ -652,19 +686,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.newServiceForm.State == huh.StateAborted {
 			m.newServiceForm.State = huh.StateNormal
-			m.screenType = 1
+			screenType = 1
 		} else if m.newServiceForm.State == huh.StateCompleted {
 			m.newServiceForm.State = huh.StateNormal
 			if newServiceIsAdd {
 				cmds = append(cmds, newEnvironmentMsg)
 			} else {
-				m.screenType = 1
+				screenType = 1
 			}
 		}
 
 	}
 
-	if m.screenType == 8 {
+	if screenType == 8 {
 		form, cmd := m.newEnvironmentForm.Update(msg)
 		if f, ok := form.(*huh.Form); ok {
 			m.newEnvironmentForm = f
@@ -674,7 +708,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.newEnvironmentForm.State == huh.StateAborted {
 			m.newEnvironmentForm.State = huh.StateNormal
-			m.screenType = 1
+			screenType = 1
 		} else if m.newEnvironmentForm.State == huh.StateCompleted {
 			m.newEnvironmentForm.State = huh.StateNormal
 			if newEnvironmentIsAdd {
@@ -689,27 +723,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, postEnvironment(newEnvironment))
 
 			} else {
-				m.screenType = 1
+				screenType = 1
 			}
 		}
 
 	}
 
-	if m.screenType == 4 {
-		form, cmd := m.newMachineJoinURLForm.Update(msg)
-		if f, ok := form.(*huh.Form); ok {
-			m.newMachineJoinURLForm = f
-		}
+	if screenType == 4 {
 
+		newListModel, cmd := m.newMachineMenu.Update(msg)
+		m.newMachineMenu = newListModel
 		cmds = append(cmds, cmd)
-
-		if m.newMachineJoinURLForm.State == huh.StateCompleted {
-			m.screenType = 1
-		}
 
 	}
 
-	if m.screenType == 9 {
+	if screenType == 9 {
 		form, cmd := m.newEnvironmentAddedForm.Update(msg)
 		if f, ok := form.(*huh.Form); ok {
 			m.newEnvironmentAddedForm = f
@@ -718,7 +746,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 
 		if m.newEnvironmentAddedForm.State == huh.StateCompleted {
-			m.screenType = 1
+			screenType = 1
 		}
 
 	}
@@ -727,7 +755,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	switch m.screenType {
+	switch screenType {
 	case 1:
 		return appStyle.Render(m.list.View())
 	case 2:
@@ -740,7 +768,9 @@ func (m model) View() string {
 		}
 	case 4:
 		{
-			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Add Machine")) + topHintPositionStyle.Render(topHintStyle.Render("Press ESC to return to main menu")) + baseStyle.Render(m.newMachineJoinURLForm.View()) + "\n"
+			screenType = 10
+
+			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Connect a new machine to VPN")) + "\n"
 		}
 	case 5:
 		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Services")) + topHintPositionStyle.Render(topHintStyle.Render("Press N to add a service\nPress Enter to select a service\nPress ← or ESC to return to main menu")) + baseStyle.Render(m.serviceList.View()) + "\n  " + m.serviceList.HelpView() + "\n"
@@ -763,14 +793,58 @@ func (m model) View() string {
 		{
 			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Add Environment")) + topHintPositionStyle.Render(topHintStyle.Render("Press ESC to return to main menu")) + baseStyle.Render(m.newEnvironmentAddedForm.View()) + "\n"
 		}
-	}
 
+	case 10:
+		{
+
+			//tea.ClearScreen()
+			app.ReleaseTerminal()
+			fmt.Print(m.newMachineJoinHint)
+
+			ok := YesNoPrompt(newMachineHintTitleStyle.Render("\n    Press Enter to return to Main Menu"), true)
+			if ok {
+				screenType = 1
+				app.RestoreTerminal()
+			} else {
+				app.RestoreTerminal()
+			}
+
+		}
+	}
 	return ""
 
 }
 
+var app *tea.Program
+
+func runCmd(name string, arg ...string) {
+	cmd := exec.Command(name, arg...)
+	cmd.Stdout = os.Stdout
+	cmd.Run()
+}
+
+func ClearTerminal() {
+	switch runtime.GOOS {
+	case "darwin":
+		runCmd("clear")
+	case "linux":
+		runCmd("clear")
+	case "windows":
+		runCmd("cmd", "/c", "cls")
+	default:
+		runCmd("clear")
+	}
+}
+
 func main() {
-	if _, err := tea.NewProgram(newModel(), tea.WithAltScreen()).Run(); err != nil {
+
+	ClearTerminal()
+
+	executeScriptString("lsof -i tcp:5445 | awk 'NR!=1 {print $2}' | xargs kill\nssh -o ExitOnForwardFailure=yes -f -N -L 5445:localhost:5445 root@162.55.172.238")
+
+	app = tea.NewProgram(newModel())
+
+	if _, err := app.Run(); err != nil {
 		fmt.Println("Error running program:", err)
 		os.Exit(1)
 	}
