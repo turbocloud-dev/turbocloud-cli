@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -42,8 +44,7 @@ var (
 				Foreground(lipgloss.AdaptiveColor{Light: "#04B575", Dark: "#04B575"}).
 				Render
 
-		//New machine styles
-
+	//New machine styles
 	newMachineHintTitleStyle = lipgloss.NewStyle().
 					Foreground(lipgloss.AdaptiveColor{Light: "#5A56E0", Dark: "#7571F9"})
 
@@ -80,8 +81,8 @@ type model struct {
 	environmentList table.Model
 
 	//New environment
-	newEnvironmentForm      *huh.Form
-	newEnvironmentAddedForm *huh.Form
+	newEnvironmentForm *huh.Form
+	newEnvironmentHint string
 
 	screenWidth  int
 	screenHeight int
@@ -155,7 +156,6 @@ func newModel() model {
 	)
 
 	// Make initial list of items
-	//const numItems = 24
 	items := []list.Item{
 		item{title: "Getting Started", description: "How to deploy the first project"},
 		item{title: "Add Machine", description: "Add a new server or local machine"},
@@ -353,7 +353,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}),
 				huh.NewInput().
 					Title("Domain").
-					Placeholder("Without HTTPS—for example, project.com—the DNS A record for that domain or subdomain should resolve to the IP address of the load balancer machine").
+					Description("Without HTTPS—for example, project.com—the DNS A record for that domain or subdomain should resolve to the IP address of the load balancer machine").
+					Placeholder("project.com").
 					Value(&newEnvironmentDomain).
 					Validate(func(str string) error {
 						/*if str == "Frank" {
@@ -377,24 +378,38 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Negative("Cancel").
 					Value(&newEnvironmentIsAdd),
 			),
-		)
+		).WithHeight(m.screenHeight - 14)
 
 		m.newEnvironmentForm.Init()
 
 	case NewEnvironmentAddedMsg:
 		screenType = 9
 
-		m.newEnvironmentAddedForm = huh.NewForm(
-			huh.NewGroup(
-				huh.NewNote().
-					Title("Environment has been added").
-					Description("Options to deploy:\n\n• Push any changes to the branch you specified in the previous step.\n• Send a GET request to https://{lighthouse.domain}/deploy/environment/:environment_id\n\nTo manage environments, go to Services and select a service from the list.\n\n").
-					Next(true).
-					NextLabel("OK").Height(22),
-			),
-		)
+		//Get the first builder machine
+		machines := getMachines().(MachineMsg) //type asssertion
+		var machineBuilder Machine
+		for _, machine := range machines {
+			if slices.Contains(machine.Types, "builder") {
+				machineBuilder = machine
+				break
+			}
+		}
 
-		m.newEnvironmentAddedForm.Init()
+		if len(machineBuilder.Domains) == 0 {
+			m.newEnvironmentHint = "Before deploying this environment you should add at least one domain to the builder machine. Contact us at hey@turbocloud.dev iff you don't know how to do that."
+		} else {
+
+			sshKeyHint := "    To allow cloning the git repository from your build machine, you should add public SSH key below to GitHub, Bitbucket, GitLab repository access keys (only read permission is required):\n\n" + codeHintStyle.Render(strings.Replace(machineBuilder.PublicSSHKey, "\n", "", -1)) + "\n\n"
+			webhookHint := "    To deploy after each Git push to a remote repository automatically, you should add a webhook below to GitHub, Bitbucket, GitLab repository webhooks:\n\n" + codeHintStyle.Render("https://"+machineBuilder.Domains[0]+"/deploy/environment/"+msg.Id)
+
+			//This public SSH key also can be found if ssh into your build machine (usually the first server you provisioned in this project) and run 'cat ~/.ssh/id_rsa.pub'`
+			m.newEnvironmentHint = sshKeyHint + webhookHint + "\n\n    Options to deploy:\n\n    • Push any changes to the branch you specified in the previous step.\n    • Send a GET request to https://" + machineBuilder.Domains[0] + "/deploy/environment/" + msg.Id + "\n\n    To manage environments, go to Services and select a service from the list.\n\n"
+		}
+
+		cmd := tea.Tick(100*time.Microsecond, func(t time.Time) tea.Msg {
+			return TickMsg(t)
+		})
+		cmds = append(cmds, cmd)
 
 	case NewMachineJoinURLMsg:
 
@@ -729,28 +744,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	}
 
-	if screenType == 4 {
-
-		newListModel, cmd := m.newMachineMenu.Update(msg)
-		m.newMachineMenu = newListModel
-		cmds = append(cmds, cmd)
-
-	}
-
-	if screenType == 9 {
-		form, cmd := m.newEnvironmentAddedForm.Update(msg)
-		if f, ok := form.(*huh.Form); ok {
-			m.newEnvironmentAddedForm = f
-		}
-
-		cmds = append(cmds, cmd)
-
-		if m.newEnvironmentAddedForm.State == huh.StateCompleted {
-			screenType = 1
-		}
-
-	}
-
 	return m, tea.Batch(cmds...)
 }
 
@@ -791,7 +784,9 @@ func (m model) View() string {
 		}
 	case 9:
 		{
-			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Add Environment")) + topHintPositionStyle.Render(topHintStyle.Render("Press ESC to return to main menu")) + baseStyle.Render(m.newEnvironmentAddedForm.View()) + "\n"
+			screenType = 11
+
+			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Environment has been added")) + "\n"
 		}
 
 	case 10:
@@ -800,6 +795,23 @@ func (m model) View() string {
 			//tea.ClearScreen()
 			app.ReleaseTerminal()
 			fmt.Print(m.newMachineJoinHint)
+
+			ok := YesNoPrompt(newMachineHintTitleStyle.Render("\n    Press Enter to return to Main Menu"), true)
+			if ok {
+				screenType = 1
+				app.RestoreTerminal()
+			} else {
+				app.RestoreTerminal()
+			}
+
+		}
+
+	case 11:
+		{
+
+			//tea.ClearScreen()
+			app.ReleaseTerminal()
+			fmt.Print(m.newEnvironmentHint)
 
 			ok := YesNoPrompt(newMachineHintTitleStyle.Render("\n    Press Enter to return to Main Menu"), true)
 			if ok {
