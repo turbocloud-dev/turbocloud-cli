@@ -867,10 +867,10 @@ func ClearTerminal() {
 
 func main() {
 
-	ClearTerminal()
+	/*ClearTerminal()
 
 	executeScriptString("lsof -i tcp:5445 | awk 'NR!=1 {print $2}' | xargs kill\nssh -o ExitOnForwardFailure=yes -f -N -L 5445:localhost:5445 root@162.55.172.238")
-
+	*/
 	app = tea.NewProgram(newModel())
 
 	if _, err := app.Run(); err != nil {
