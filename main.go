@@ -17,8 +17,10 @@ import (
 )
 
 var (
-	appStyle  = lipgloss.NewStyle().Padding(1, 2)
-	listStyle = lipgloss.NewStyle().Padding(5, 4)
+	appStyle         = lipgloss.NewStyle().Padding(1, 2)
+	listStyle        = lipgloss.NewStyle().Padding(1, 4).Width(0).Height(0)
+	listHelpStyle    = lipgloss.NewStyle().Padding(0, 4)
+	listTopHintHeght = 11
 
 	titleStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FFFDF5")).
@@ -90,7 +92,6 @@ type model struct {
 	//New machine
 	newMachineForm     *huh.Form
 	newMachineJoinHint string
-	newMachineMenu     list.Model
 }
 
 var baseStyle = lipgloss.NewStyle().
@@ -172,22 +173,9 @@ func newModel() model {
 	mainMenu.Styles.Title = titleStyle
 	mainMenu.SetShowStatusBar(false)
 
-	items = []list.Item{
-		item{title: "Copy Setup Command"},
-		item{title: "Go to Main Menu"},
-	}
-
-	// Setup list
-	newMachineMenu := list.New(items, itemDelegate{}, defaultWidth, listHeight)
-	newMachineMenu.SetShowTitle(false)
-	newMachineMenu.SetShowStatusBar(false)
-	newMachineMenu.SetShowHelp(false)
-	newMachineMenu.SetShowFilter(false)
-
 	model := model{
-		list:           mainMenu,
-		delegateKeys:   delegateKeys,
-		newMachineMenu: newMachineMenu,
+		list:         mainMenu,
+		delegateKeys: delegateKeys,
 	}
 
 	return model
@@ -205,14 +193,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.screenWidth = msg.Width
 		m.screenHeight = msg.Height
+
 		h, v := appStyle.GetFrameSize()
 		m.list.SetSize(msg.Width-h, msg.Height-v)
 
-		m.newMachineMenu.SetSize(msg.Width-4, 8)
+		v, _ = listStyle.GetFrameSize()
+		m.machineList.SetWidth(m.screenWidth - 2*v)
+		m.machineList.SetHeight(m.screenHeight - listTopHintHeght)
 
-		h, v = listStyle.GetFrameSize()
-		m.machineList.SetWidth(m.screenWidth - h)
-		m.machineList.SetHeight(m.screenHeight - v)
+		if screenType == 3 {
+			m.newMachineForm.WithWidth(m.screenWidth - 2*v)
+			m.newMachineForm.WithHeight(m.screenHeight - listTopHintHeght)
+		}
 
 		h, v = listStyle.GetFrameSize()
 		m.serviceList.SetWidth(m.screenWidth - h)
@@ -221,6 +213,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h, v = listStyle.GetFrameSize()
 		m.environmentList.SetWidth(m.screenWidth - h)
 		m.environmentList.SetHeight(m.screenHeight - v - 1)
+
+		ClearTerminal()
 
 	case MainMenuMsg:
 		screenType = 1
@@ -265,6 +259,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 
 		m.newMachineForm.Init()
+
+		v, _ := listStyle.GetFrameSize()
+
+		m.newMachineForm.WithWidth(m.screenWidth - 2*v)
+		m.newMachineForm.WithHeight(m.screenHeight - listTopHintHeght + 1)
+		m.newMachineForm.Help()
 
 	case NewServiceMsg:
 		screenType = 7
@@ -429,6 +429,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		screenType = 2
 
 		//Reload machine list
+		selectedRow := m.machineList.SelectedRow()
+		indexToSelect := 0
 
 		columns := []table.Column{
 			{Title: "ID", Width: 10},
@@ -443,7 +445,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		//{"1", "Tokyo", "Japan", "37,274,000"}
 		rows := []table.Row{}
 
-		for _, machine := range msg {
+		for index, machine := range msg {
+
+			if selectedRow != nil && selectedRow[0] == machine.Id {
+				indexToSelect = index
+			}
 			var tableRow []string
 			tableRow = append(tableRow, machine.Id)
 			tableRow = append(tableRow, machine.Name)
@@ -478,10 +484,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.SetStyles(s)
 
 		m.machineList = t
-		h, v := listStyle.GetFrameSize()
-		m.machineList.SetWidth(m.screenWidth - h)
-		m.machineList.SetHeight(m.screenHeight - v)
 
+		v, _ := listStyle.GetFrameSize()
+		m.machineList.SetWidth(m.screenWidth - 2*v)
+		m.machineList.SetHeight(m.screenHeight - listTopHintHeght)
+
+		m.machineList.MoveDown(indexToSelect)
 		cmd := tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 			if screenType == 2 {
 				return getMachines()
@@ -655,8 +663,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// This will also call our delegate's update function.
 	if screenType == 1 {
-		newListModel, cmd := m.list.Update(msg)
-		m.list = newListModel
+		newList, cmd := m.list.Update(msg)
+		m.list = newList
 		cmds = append(cmds, cmd)
 
 	}
@@ -769,12 +777,12 @@ func (m model) View() string {
 	case 1:
 		return appStyle.Render(m.list.View())
 	case 2:
-		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Machines")) + topHintPositionStyle.Render(topHintStyle.Render("Press Enter to select a machine\nPress ← or ESC to return to main menu")) + baseStyle.Render(m.machineList.View()) + "\n  " + m.machineList.HelpView() + "\n"
+		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Machines")) + topHintPositionStyle.Render(topHintStyle.Render("Press Enter to select a machine\nPress ← or ESC to return to main menu")) + listStyle.Render(m.machineList.View()) + "\n\n\n" + listHelpStyle.Render(m.machineList.HelpView()) + "\n"
 	case 3:
 		{
 			/*if m.newMachineForm.State == huh.StateCompleted {
 			}*/
-			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Add Machine")) + topHintPositionStyle.Render(topHintStyle.Render("Press X or Space to select options\nPress Enter to confirm\nPress ESC to return to main menu")) + baseStyle.Render(m.newMachineForm.View()) + "\n"
+			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Add Machine")) + topHintPositionStyle.Render(topHintStyle.Render("Press X or Space to select options\nPress Enter to confirm\nPress ESC to return to main menu")) + listStyle.Render(m.newMachineForm.View()) + "\n"
 		}
 	case 4:
 		{
@@ -867,11 +875,11 @@ func ClearTerminal() {
 
 func main() {
 
-	/*ClearTerminal()
+	ClearTerminal()
 
 	executeScriptString("lsof -i tcp:5445 | awk 'NR!=1 {print $2}' | xargs kill\nssh -o ExitOnForwardFailure=yes -f -N -L 5445:localhost:5445 root@162.55.172.238")
-	*/
-	app = tea.NewProgram(newModel())
+
+	app = tea.NewProgram(newModel() /*, tea.WithAltScreen()*/)
 
 	if _, err := app.Run(); err != nil {
 		fmt.Println("Error running program:", err)
