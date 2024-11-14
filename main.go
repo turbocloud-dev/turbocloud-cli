@@ -546,11 +546,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.SetStyles(s)
 
 		m.serviceList = t
-		h, v := listStyle.GetFrameSize()
-		m.serviceList.SetWidth(m.screenWidth - h)
-		m.serviceList.SetHeight(m.screenHeight - v)
-
-		return m, nil
+		v, _ := listStyle.GetFrameSize()
+		m.serviceList.SetWidth(m.screenWidth - 2*v)
+		m.serviceList.SetHeight(m.screenHeight - listTopHintHeght)
 
 	case EnvironmentsMsg:
 		// The server returned a status message. Save it to our model. Also
@@ -791,7 +789,7 @@ func (m model) View() string {
 			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Connect a new machine to VPN")) + "\n"
 		}
 	case 5:
-		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Services")) + topHintPositionStyle.Render(topHintStyle.Render("Press N to add a service\nPress Enter to select a service\nPress ← or ESC to return to main menu")) + baseStyle.Render(m.serviceList.View()) + "\n  " + m.serviceList.HelpView() + "\n"
+		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Services")) + topHintPositionStyle.Render(topHintStyle.Render("Press Enter to select a service\nPress ← or ESC to return to main menu")) + listStyle.Render(m.serviceList.View()) + "\n\n\n" + listHelpStyle.Render(m.serviceList.HelpView()) + "\n"
 	case 6:
 		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Services > "+m.selectedService.Name)) + topHintPositionStyle.Render(topHintStyle.Render("Press N to add an environment\nPress Enter to select an environment\nPress E to edit/delete this service\nPress ← or ESC to return to Services")) + baseStyle.Render(m.environmentList.View()) + "\n  " + m.environmentList.HelpView() + "\n"
 	case 7:
@@ -877,7 +875,7 @@ func main() {
 
 	ClearTerminal()
 
-	executeScriptString("lsof -i tcp:5445 | awk 'NR!=1 {print $2}' | xargs kill\nssh -o ExitOnForwardFailure=yes -f -N -L 5445:localhost:5445 root@162.55.172.238")
+	//executeScriptString("lsof -i tcp:5445 | awk 'NR!=1 {print $2}' | xargs kill\nssh -o ExitOnForwardFailure=yes -f -N -L 5445:localhost:5445 root@78.46.149.100")
 
 	app = tea.NewProgram(newModel() /*, tea.WithAltScreen()*/)
 
