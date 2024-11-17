@@ -11,10 +11,23 @@ import (
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 )
+
+// Screen Types
+const SCREEN_TYPE_ENVIRONMENTS = 6
+const SCREEN_TYPE_ENV_MENU = 12
+const SCREEN_TYPE_ENV_DELETE_CONFIRMATION = 13
+
+// Strings
+const ADD_ENVIRONMENT_STRING = "Add Environment"
+const MENU_EDIT = "Edit / Details"
+const MENU_DEPLOY = "Deploy"
+const MENU_DELETE = "Delete"
+const MENU_BACK = "Back"
 
 var (
 	appStyle         = lipgloss.NewStyle().Padding(1, 2)
@@ -80,7 +93,10 @@ type model struct {
 	newServiceForm *huh.Form
 
 	//Environments
-	environmentList table.Model
+	environmentList       table.Model
+	envMenu               list.Model
+	selectedEnvironment   Environment
+	deleteEnvConfirmation textinput.Model
 
 	//New environment
 	newEnvironmentForm *huh.Form
@@ -137,10 +153,54 @@ type NewEnvironmentMsg struct {
 	service Service
 }
 
-func newEnvironmentMsg() tea.Msg {
-	var msg NewEnvironmentMsg
-	msg.service = postService(newServiceName, newServiceGitURL)
-	return msg
+func newEnvironmentMsg(serviceId string, serviceName string) tea.Cmd {
+	return func() tea.Msg {
+		var msg NewEnvironmentMsg
+		if serviceId == "" {
+			msg.service = postService(newServiceName, newServiceGitURL)
+		} else {
+			msg.service.Id = serviceId
+			msg.service.Name = serviceName
+
+		}
+		return msg
+	}
+
+}
+
+type EditEnvironmentMsg struct {
+	environment Environment
+}
+
+func editEnvironmentMsg(environmentId string, serviceId string) tea.Cmd {
+	return func() tea.Msg {
+		var environments = getEnvironments(serviceId).(EnvironmentsMsg)
+		var msg EditEnvironmentMsg
+
+		for _, environment := range environments {
+			if environment.Id == environmentId {
+				msg.environment = environment
+			}
+		}
+
+		return msg
+	}
+
+}
+
+type MenuEnvironmentMsg struct {
+	environment Environment
+}
+
+func menuEnvironmentMsg(envId string, envName string) tea.Cmd {
+	return func() tea.Msg {
+		var msg MenuEnvironmentMsg
+		msg.environment.Id = envId
+		msg.environment.Name = envName
+
+		return msg
+	}
+
 }
 
 func newMachineJoinURLMsg() tea.Msg {
@@ -173,9 +233,16 @@ func newModel() model {
 	mainMenu.Styles.Title = titleStyle
 	mainMenu.SetShowStatusBar(false)
 
+	//Setup deleteEnvConfirmation
+	deleteEnvConfirmation := textinput.New()
+	deleteEnvConfirmation.Focus()
+	deleteEnvConfirmation.CharLimit = 156
+	deleteEnvConfirmation.Width = 20
+
 	model := model{
-		list:         mainMenu,
-		delegateKeys: delegateKeys,
+		list:                  mainMenu,
+		delegateKeys:          delegateKeys,
+		deleteEnvConfirmation: deleteEnvConfirmation,
 	}
 
 	return model
@@ -206,13 +273,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.newMachineForm.WithHeight(m.screenHeight - listTopHintHeght)
 		}
 
-		h, v = listStyle.GetFrameSize()
-		m.serviceList.SetWidth(m.screenWidth - h)
-		m.serviceList.SetHeight(m.screenHeight - v)
+		m.serviceList.SetWidth(m.screenWidth - 2*v)
+		m.serviceList.SetHeight(m.screenHeight - listTopHintHeght)
 
-		h, v = listStyle.GetFrameSize()
-		m.environmentList.SetWidth(m.screenWidth - h)
-		m.environmentList.SetHeight(m.screenHeight - v - 1)
+		m.environmentList.SetWidth(m.screenWidth - 2*v)
+		m.environmentList.SetHeight(m.screenHeight - listTopHintHeght)
+
+		if screenType == SCREEN_TYPE_ENV_MENU {
+			v, _ := listStyle.GetFrameSize()
+			m.envMenu.SetSize(m.screenWidth-2*v, m.screenHeight-listTopHintHeght)
+		}
 
 		ClearTerminal()
 
@@ -318,69 +388,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		newEnvironmentDomain = ""
 		newEnvironmentMachines = newEnvironmentMachines[:0]
 
-		machineOptions := getMachineOptions()
-
 		m.selectedService.Id = msg.service.Id
 		m.selectedService.Name = msg.service.Name
 
-		m.newEnvironmentForm = huh.NewForm(
-			huh.NewGroup(
-				huh.NewInput().
-					Title("Environment Name").
-					Value(&newEnvironmentName).
-					Validate(func(str string) error {
-						/*if str == "Frank" {
-						}*/
-						return nil
-					}),
-				huh.NewInput().
-					Title("Branch").
-					Placeholder("main, master, dev, etc").
-					Value(&newEnvironmentBranchName).
-					Validate(func(str string) error {
-						/*if str == "Frank" {
-						}*/
-						return nil
-					}),
-				huh.NewInput().
-					Title("Port").
-					Placeholder("4008, 5005, etc").
-					Value(&newEnvironmentPort).
-					Validate(func(str string) error {
-						/*if str == "Frank" {
-						}*/
-						return nil
-					}),
-				huh.NewInput().
-					Title("Domain").
-					Description("Without HTTPS—for example, project.com—the DNS A record for that domain or subdomain should resolve to the IP address of the load balancer machine").
-					Placeholder("project.com").
-					Value(&newEnvironmentDomain).
-					Validate(func(str string) error {
-						/*if str == "Frank" {
-						}*/
-						return nil
-					}),
-				huh.NewMultiSelect[string]().
-					Title("Choose Servers to Deploy").
-					Value(&newEnvironmentMachines).
-					Options(machineOptions...),
-				huh.NewConfirm().
-					Key("done").
-					Title("Add a new environment?").
-					Validate(func(v bool) error {
-						if !v {
-							screenType = 1
-						}
-						return nil
-					}).
-					Affirmative("Add").
-					Negative("Cancel").
-					Value(&newEnvironmentIsAdd),
-			),
-		).WithHeight(m.screenHeight - 14)
+		machineOptions, _ := getMachineOptions()
+		createEnvironmentDetails(&m, machineOptions)
 
-		m.newEnvironmentForm.Init()
+	case EditEnvironmentMsg:
+		screenType = 8
+		machineOptions, machines := getMachineOptions()
+
+		newEnvironmentMachines = newEnvironmentMachines[:0]
+		for _, machine := range machines {
+			if slices.Contains(msg.environment.MachineIds, machine.Id) {
+				newEnvironmentMachines = append(newEnvironmentMachines, machine.Name)
+			}
+		}
+
+		newEnvironmentName = msg.environment.Name
+		newEnvironmentBranchName = msg.environment.Branch
+		newEnvironmentIsAdd = true
+		newEnvironmentPort = msg.environment.Port
+		newEnvironmentDomain = msg.environment.Domains[0]
+
+		createEnvironmentDetails(&m, machineOptions)
 
 	case NewEnvironmentAddedMsg:
 		screenType = 9
@@ -555,16 +586,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// tell the Bubble Tea runtime we want to exit because we have nothing
 		// else to do. We'll still be able to render a final view with our
 		// status message.
-		screenType = 6
+		screenType = SCREEN_TYPE_ENVIRONMENTS
 
 		//Reload machine list
 
 		columns := []table.Column{
-			{Title: "ID", Width: 8},
+			{Title: "ID", Width: 15},
 			{Title: "Name", Width: 16},
 			{Title: "Branch", Width: 16},
 		}
 		rows := []table.Row{}
+
+		var tableRow []string
+		tableRow = append(tableRow, ADD_ENVIRONMENT_STRING)
+		tableRow = append(tableRow, "")
+		tableRow = append(tableRow, "")
+
+		rows = append(rows, tableRow)
 
 		for _, environment := range msg {
 			var tableRow []string
@@ -596,11 +634,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.SetStyles(s)
 
 		m.environmentList = t
-		h, v := listStyle.GetFrameSize()
-		m.environmentList.SetWidth(m.screenWidth - h)
-		m.environmentList.SetHeight(m.screenHeight - v - 1)
+		v, _ := listStyle.GetFrameSize()
+		m.environmentList.SetWidth(m.screenWidth - 2*v)
+		m.environmentList.SetHeight(m.screenHeight - listTopHintHeght)
 
 		return m, nil
+
+	case MenuEnvironmentMsg:
+		screenType = SCREEN_TYPE_ENV_MENU
+
+		envMenuItems := []list.Item{
+			item{title: MENU_DEPLOY, description: ""},
+			item{title: MENU_EDIT, description: ""},
+			item{title: MENU_DELETE, description: ""},
+			item{title: MENU_BACK, description: ""},
+		}
+
+		m.envMenu = list.New(envMenuItems, envMenuItemDelegate{}, defaultWidth, listHeight)
+		m.envMenu.SetShowStatusBar(false)
+		m.envMenu.SetFilteringEnabled(false)
+		m.envMenu.SetShowHelp(false)
+		m.envMenu.SetShowTitle(false)
+
+		v, _ := listStyle.GetFrameSize()
+		m.envMenu.SetSize(m.screenWidth-2*v, m.screenHeight-listTopHintHeght)
 
 	case tea.KeyMsg:
 		// Don't match any of the keys below if we're actively filtering.
@@ -618,7 +675,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
-			if screenType == 6 {
+			if screenType == SCREEN_TYPE_ENVIRONMENTS {
 				screenType = 5
 				return m, nil
 			}
@@ -636,13 +693,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				screenType = 1
 				return m, nil
 			}
+			if screenType == SCREEN_TYPE_ENV_MENU {
+				screenType = SCREEN_TYPE_ENVIRONMENTS
+				return m, nil
+			} else if screenType == SCREEN_TYPE_ENV_DELETE_CONFIRMATION {
+				screenType = SCREEN_TYPE_ENV_MENU
+				return m, nil
+			}
 		case "left":
 			if screenType == 2 || screenType == 5 {
 				screenType = 1
 				return m, nil
 			}
-			if screenType == 6 {
+			if screenType == SCREEN_TYPE_ENVIRONMENTS {
 				screenType = 5
+				return m, nil
+			}
+			if screenType == SCREEN_TYPE_ENV_MENU {
+				screenType = SCREEN_TYPE_ENVIRONMENTS
 				return m, nil
 			}
 		case "enter":
@@ -650,7 +718,46 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				//A service has been selected
 				m.selectedService.Id = m.serviceList.SelectedRow()[0]
 				m.selectedService.Name = m.serviceList.SelectedRow()[1]
-				return m, getEnvironments(m.selectedService.Id)
+				return m, getEnvironmentsCmd(m.selectedService.Id)
+			} else if screenType == SCREEN_TYPE_ENVIRONMENTS {
+				//A new environment has been selected
+				if m.environmentList.SelectedRow()[0] == ADD_ENVIRONMENT_STRING {
+					cmds = append(cmds, newEnvironmentMsg(m.serviceList.SelectedRow()[0], m.serviceList.SelectedRow()[1]))
+				} else {
+					cmds = append(cmds, menuEnvironmentMsg(m.environmentList.SelectedRow()[0], m.environmentList.SelectedRow()[1]))
+					m.selectedEnvironment.Id = m.environmentList.SelectedRow()[0]
+					m.selectedEnvironment.Name = m.environmentList.SelectedRow()[1]
+				}
+
+			} else if screenType == SCREEN_TYPE_ENV_MENU {
+				//A new environment has been selected
+				if m.envMenu.SelectedItem().(item).title == MENU_BACK {
+					//Go back
+					screenType = SCREEN_TYPE_ENVIRONMENTS
+					return m, nil
+				} else if m.envMenu.SelectedItem().(item).title == MENU_DEPLOY {
+					//Deploy
+					screenType = SCREEN_TYPE_ENVIRONMENTS
+					return m, nil
+				} else if m.envMenu.SelectedItem().(item).title == MENU_EDIT {
+					//Deploy
+					cmds = append(cmds, editEnvironmentMsg(m.selectedEnvironment.Id, m.selectedService.Id))
+				} else if m.envMenu.SelectedItem().(item).title == MENU_DELETE {
+					//Delete environment
+					m.deleteEnvConfirmation.SetValue("")
+					m.deleteEnvConfirmation.Focus()
+					screenType = SCREEN_TYPE_ENV_DELETE_CONFIRMATION
+					return m, nil
+				}
+
+			} else if screenType == SCREEN_TYPE_ENV_DELETE_CONFIRMATION {
+				//A new environment has been selected
+				if strings.ToLower(m.deleteEnvConfirmation.Value()) == "y" {
+					m.selectedService.Id = m.serviceList.SelectedRow()[0]
+					m.selectedService.Name = m.serviceList.SelectedRow()[1]
+					return m, getEnvironmentsCmd(m.selectedService.Id)
+				}
+
 			}
 		case "ctrl+c":
 			return m, tea.Quit
@@ -677,7 +784,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 	}
 
-	if screenType == 6 {
+	if screenType == SCREEN_TYPE_ENVIRONMENTS {
 		m.environmentList, cmd = m.environmentList.Update(msg)
 		cmds = append(cmds, cmd)
 	}
@@ -718,7 +825,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if m.newServiceForm.State == huh.StateCompleted {
 			m.newServiceForm.State = huh.StateNormal
 			if newServiceIsAdd {
-				cmds = append(cmds, newEnvironmentMsg)
+				cmds = append(cmds, newEnvironmentMsg("", ""))
 			} else {
 				screenType = 1
 			}
@@ -767,6 +874,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	}
 
+	if screenType == SCREEN_TYPE_ENV_MENU {
+		newList, cmd := m.envMenu.Update(msg)
+		m.envMenu = newList
+		cmds = append(cmds, cmd)
+
+	}
+
+	if screenType == SCREEN_TYPE_ENV_DELETE_CONFIRMATION {
+		m.deleteEnvConfirmation, cmd = m.deleteEnvConfirmation.Update(msg)
+		cmds = append(cmds, cmd)
+
+	}
+
 	return m, tea.Batch(cmds...)
 }
 
@@ -791,7 +911,7 @@ func (m model) View() string {
 	case 5:
 		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Services")) + topHintPositionStyle.Render(topHintStyle.Render("Press Enter to select a service\nPress ← or ESC to return to main menu")) + listStyle.Render(m.serviceList.View()) + "\n\n\n" + listHelpStyle.Render(m.serviceList.HelpView()) + "\n"
 	case 6:
-		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Services > "+m.selectedService.Name)) + topHintPositionStyle.Render(topHintStyle.Render("Press N to add an environment\nPress Enter to select an environment\nPress E to edit/delete this service\nPress ← or ESC to return to Services")) + baseStyle.Render(m.environmentList.View()) + "\n  " + m.environmentList.HelpView() + "\n"
+		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Services > "+m.selectedService.Name)) + topHintPositionStyle.Render(topHintStyle.Render("Press Enter to add or select an environment\nPress ← or ESC to return to Services")) + listStyle.Render(m.environmentList.View()) + "\n\n\n" + listHelpStyle.Render(m.environmentList.HelpView()) + "\n"
 	case 7:
 		{
 			/*if m.newMachineForm.State == huh.StateCompleted {
@@ -845,6 +965,15 @@ func (m model) View() string {
 			}
 
 		}
+	case SCREEN_TYPE_ENV_MENU:
+		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Services > "+m.selectedService.Name+" > "+m.selectedEnvironment.Name)) + topHintPositionStyle.Render(topHintStyle.Render("Press Enter to select\nPress ← or ESC to return to Environments")) + listStyle.Render(m.envMenu.View()) + "\n"
+
+	case SCREEN_TYPE_ENV_DELETE_CONFIRMATION:
+		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Services > "+m.selectedService.Name+" > "+m.selectedEnvironment.Name)) + topHintPositionStyle.Render(fmt.Sprintf(
+			"\n Do you really want to delete this environment? Type 'y' to confirm or press ESC to cancel.\n\n %s\n\n %s",
+			m.deleteEnvConfirmation.View(),
+			"(esc to quit)"))
+
 	}
 	return ""
 
@@ -875,7 +1004,7 @@ func main() {
 
 	ClearTerminal()
 
-	//executeScriptString("lsof -i tcp:5445 | awk 'NR!=1 {print $2}' | xargs kill\nssh -o ExitOnForwardFailure=yes -f -N -L 5445:localhost:5445 root@78.46.149.100")
+	executeScriptString("lsof -i tcp:5445 | awk 'NR!=1 {print $2}' | xargs kill\nssh -o ExitOnForwardFailure=yes -f -N -L 5445:localhost:5445 root@188.245.224.58")
 
 	app = tea.NewProgram(newModel() /*, tea.WithAltScreen()*/)
 

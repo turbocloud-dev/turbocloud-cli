@@ -110,13 +110,13 @@ func getMachineStates() []MachineStats {
 	return machineStats
 }
 
-func getMachineOptions() []huh.Option[string] {
+func getMachineOptions() ([]huh.Option[string], []Machine) {
 	machines := getMachines().(MachineMsg) //type asssertion
 	opts := []string{}
 	for _, machine := range machines {
 		opts = append(opts, machine.Name)
 	}
-	return huh.NewOptions(opts...)
+	return huh.NewOptions(opts...), machines
 
 }
 
@@ -267,34 +267,38 @@ type Environment struct {
 
 type EnvironmentsMsg []Environment
 
-func getEnvironments(serviceId string) tea.Cmd {
+func getEnvironmentsCmd(serviceId string) tea.Cmd {
 
 	return func() tea.Msg {
-		// Create an HTTP client and make a GET request.
-		c := &http.Client{Timeout: 10 * time.Second}
-		res, err := c.Get(baseUrl + "service/" + serviceId + "/environment")
-
-		if err != nil {
-			// There was an error making our request. Wrap the error we received
-			// in a message and return it.
-			return errMsg{err}
-		}
-
-		defer res.Body.Close()
-
-		// We received a response from the server. Return the HTTP status code
-		// as a message.
-		dec := json.NewDecoder(res.Body)
-
-		var environmentsMsg EnvironmentsMsg
-		if err := dec.Decode(&environmentsMsg); err == io.EOF {
-			return errMsg{err}
-		} else if err != nil {
-			return errMsg{err}
-		}
-		return environmentsMsg
+		return getEnvironments(serviceId)
 	}
 
+}
+
+func getEnvironments(serviceId string) tea.Msg {
+	// Create an HTTP client and make a GET request.
+	c := &http.Client{Timeout: 10 * time.Second}
+	res, err := c.Get(baseUrl + "service/" + serviceId + "/environment")
+
+	if err != nil {
+		// There was an error making our request. Wrap the error we received
+		// in a message and return it.
+		return errMsg{err}
+	}
+
+	defer res.Body.Close()
+
+	// We received a response from the server. Return the HTTP status code
+	// as a message.
+	dec := json.NewDecoder(res.Body)
+
+	var environmentsMsg EnvironmentsMsg
+	if err := dec.Decode(&environmentsMsg); err == io.EOF {
+		return errMsg{err}
+	} else if err != nil {
+		return errMsg{err}
+	}
+	return environmentsMsg
 }
 
 type NewEnvironmentAddedMsg Environment
