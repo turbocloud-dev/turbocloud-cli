@@ -361,3 +361,63 @@ func postEnvironment(newEnvironment Environment) tea.Cmd {
 	}
 
 }
+
+type EnvironmentEditedMsg Environment
+
+func updateEnvironment(newEnvironment Environment) EnvironmentEditedMsg {
+
+	var environment EnvironmentEditedMsg
+
+	// JSON body
+	scriptTemplate := createTemplate("environment", `{
+			"Id":"{{.ENV_ID}}",
+			"Name":"{{.ENV_NAME}}",
+			"Branch":"{{.ENV_BRANCH}}",
+			"GitTag":"{{.ENV_TAG}}",
+			"Domains":["{{.ENV_DOMAIN}}"],
+			"Port":"{{.ENV_PORT}}",
+			"MachineIds":["{{.MACHINE_IDS}}"]
+	}`)
+
+	var bodyBytes bytes.Buffer
+	templateData := map[string]string{
+		"ENV_ID":      newEnvironment.Id,
+		"ENV_NAME":    newEnvironment.Name,
+		"ENV_BRANCH":  newEnvironment.Branch,
+		"ENV_TAG":     newEnvironment.GitTag,
+		"ENV_DOMAIN":  newEnvironment.Domains[0], //currently we can add only one domain during environment creation
+		"ENV_PORT":    newEnvironment.Port,
+		"MACHINE_IDS": strings.Join(newEnvironment.MachineIds, `","`),
+	}
+
+	if err := scriptTemplate.Execute(&bodyBytes, templateData); err != nil {
+		fmt.Println("Cannot execute template for Caddyfile:", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPut, baseUrl+"environment", bytes.NewBuffer(bodyBytes.Bytes()))
+	if err != nil {
+		// handle error
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	res, err := client.Do(req)
+	if err != nil {
+		return environment
+	}
+	defer res.Body.Close()
+
+	// We received a response from the server. Return the HTTP status code
+	// as a message.
+	dec := json.NewDecoder(res.Body)
+
+	if err := dec.Decode(&environment); err == io.EOF {
+		return environment
+	} else if err != nil {
+		return environment
+	}
+
+	return environment
+
+}

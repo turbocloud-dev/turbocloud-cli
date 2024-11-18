@@ -19,8 +19,10 @@ import (
 
 // Screen Types
 const SCREEN_TYPE_ENVIRONMENTS = 6
+const SCREEN_TYPE_NEW_ENVIRONMENT = 8
 const SCREEN_TYPE_ENV_MENU = 12
 const SCREEN_TYPE_ENV_DELETE_CONFIRMATION = 13
+const SCREEN_TYPE_EDIT_ENVIRONMENT = 14
 
 // Strings
 const ADD_ENVIRONMENT_STRING = "Add Environment"
@@ -379,7 +381,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.newServiceForm.Init()
 
 	case NewEnvironmentMsg:
-		screenType = 8
+		screenType = SCREEN_TYPE_NEW_ENVIRONMENT
 
 		newEnvironmentName = ""
 		newEnvironmentBranchName = ""
@@ -395,7 +397,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		createEnvironmentDetails(&m, machineOptions)
 
 	case EditEnvironmentMsg:
-		screenType = 8
+		screenType = SCREEN_TYPE_EDIT_ENVIRONMENT
 		machineOptions, machines := getMachineOptions()
 
 		newEnvironmentMachines = newEnvironmentMachines[:0]
@@ -686,7 +688,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				screenType = 1
 				return m, nil
 			}
-			if screenType == 8 {
+			if screenType == SCREEN_TYPE_NEW_ENVIRONMENT {
 				if m.newEnvironmentForm != nil {
 					m.newEnvironmentForm.State = huh.StateNormal
 				}
@@ -698,6 +700,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			} else if screenType == SCREEN_TYPE_ENV_DELETE_CONFIRMATION {
 				screenType = SCREEN_TYPE_ENV_MENU
+				return m, nil
+			}
+			if screenType == SCREEN_TYPE_EDIT_ENVIRONMENT {
+				screenType = SCREEN_TYPE_ENVIRONMENTS
 				return m, nil
 			}
 		case "left":
@@ -833,7 +839,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	}
 
-	if screenType == 8 {
+	if screenType == SCREEN_TYPE_NEW_ENVIRONMENT || screenType == SCREEN_TYPE_EDIT_ENVIRONMENT {
 		form, cmd := m.newEnvironmentForm.Update(msg)
 		if f, ok := form.(*huh.Form); ok {
 			m.newEnvironmentForm = f
@@ -841,34 +847,68 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		cmds = append(cmds, cmd)
 
-		if m.newEnvironmentForm.State == huh.StateAborted {
-			m.newEnvironmentForm.State = huh.StateNormal
-			screenType = 1
-		} else if m.newEnvironmentForm.State == huh.StateCompleted {
-			m.newEnvironmentForm.State = huh.StateNormal
-			if newEnvironmentIsAdd {
-				//Send a request to create a new environment
-				var newEnvironment Environment
-				newEnvironment.ServiceId = m.selectedService.Id
-				newEnvironment.Name = newEnvironmentName
-				newEnvironment.Branch = newEnvironmentBranchName
-				newEnvironment.Domains = append(newEnvironment.Domains, newEnvironmentDomain)
-				newEnvironment.Port = newEnvironmentPort
-				newEnvironment.GitTag = ""
-				//Get Machine Ids to deploy
-				machines := getMachines().(MachineMsg) //type asssertion
-				machineIds := []string{}
-
-				for _, machine := range machines {
-					if slices.Contains(newEnvironmentMachines, machine.Name) {
-						machineIds = append(machineIds, machine.Id)
-					}
-				}
-				newEnvironment.MachineIds = machineIds
-				cmds = append(cmds, postEnvironment(newEnvironment))
-
-			} else {
+		if screenType == SCREEN_TYPE_NEW_ENVIRONMENT {
+			if m.newEnvironmentForm.State == huh.StateAborted {
+				m.newEnvironmentForm.State = huh.StateNormal
 				screenType = 1
+			} else if m.newEnvironmentForm.State == huh.StateCompleted {
+				m.newEnvironmentForm.State = huh.StateNormal
+				if newEnvironmentIsAdd {
+					//Send a request to create a new environment
+					var newEnvironment Environment
+					newEnvironment.ServiceId = m.selectedService.Id
+					newEnvironment.Name = newEnvironmentName
+					newEnvironment.Branch = newEnvironmentBranchName
+					newEnvironment.Domains = append(newEnvironment.Domains, newEnvironmentDomain)
+					newEnvironment.Port = newEnvironmentPort
+					newEnvironment.GitTag = ""
+					//Get Machine Ids to deploy
+					machines := getMachines().(MachineMsg) //type asssertion
+					machineIds := []string{}
+
+					for _, machine := range machines {
+						if slices.Contains(newEnvironmentMachines, machine.Name) {
+							machineIds = append(machineIds, machine.Id)
+						}
+					}
+					newEnvironment.MachineIds = machineIds
+					cmds = append(cmds, postEnvironment(newEnvironment))
+
+				} else {
+					screenType = 1
+				}
+			}
+		} else {
+			if m.newEnvironmentForm.State == huh.StateAborted {
+				m.newEnvironmentForm.State = huh.StateNormal
+				screenType = SCREEN_TYPE_ENV_MENU
+			} else if m.newEnvironmentForm.State == huh.StateCompleted {
+				m.newEnvironmentForm.State = huh.StateNormal
+				if newEnvironmentIsAdd {
+					//Send a request to create a new environment
+					var editedEnvironment Environment
+					editedEnvironment.Id = m.selectedEnvironment.Id
+					editedEnvironment.Name = newEnvironmentName
+					editedEnvironment.Branch = newEnvironmentBranchName
+					editedEnvironment.Domains = append(editedEnvironment.Domains, newEnvironmentDomain)
+					editedEnvironment.Port = newEnvironmentPort
+					editedEnvironment.GitTag = ""
+					//Get Machine Ids to deploy
+					machines := getMachines().(MachineMsg) //type asssertion
+					machineIds := []string{}
+
+					for _, machine := range machines {
+						if slices.Contains(newEnvironmentMachines, machine.Name) {
+							machineIds = append(machineIds, machine.Id)
+						}
+					}
+					editedEnvironment.MachineIds = machineIds
+					updateEnvironment(editedEnvironment)
+					cmds = append(cmds, getEnvironmentsCmd(m.selectedService.Id))
+
+				} else {
+					screenType = SCREEN_TYPE_ENV_MENU
+				}
 			}
 		}
 
@@ -919,7 +959,7 @@ func (m model) View() string {
 			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Add Service")) + topHintPositionStyle.Render(topHintStyle.Render("Press X or Space to select options\nPress Enter to confirm\nPress ESC to return to main menu")) + baseStyle.Render(m.newServiceForm.View()) + "\n"
 		}
 
-	case 8:
+	case SCREEN_TYPE_NEW_ENVIRONMENT:
 		{
 			/*if m.newMachineForm.State == huh.StateCompleted {
 			}*/
@@ -974,6 +1014,13 @@ func (m model) View() string {
 			m.deleteEnvConfirmation.View(),
 			"(esc to quit)"))
 
+	case SCREEN_TYPE_EDIT_ENVIRONMENT:
+		{
+			/*if m.newMachineForm.State == huh.StateCompleted {
+			}*/
+			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Edit Environment")) + topHintPositionStyle.Render(topHintStyle.Render("Press X or Space to select options\nPress Enter to confirm\nPress ESC to return to main menu")) + baseStyle.Render(m.newEnvironmentForm.View()) + "\n"
+		}
+
 	}
 	return ""
 
@@ -1004,7 +1051,7 @@ func main() {
 
 	ClearTerminal()
 
-	executeScriptString("lsof -i tcp:5445 | awk 'NR!=1 {print $2}' | xargs kill\nssh -o ExitOnForwardFailure=yes -f -N -L 5445:localhost:5445 root@188.245.224.58")
+	//executeScriptString("lsof -i tcp:5445 | awk 'NR!=1 {print $2}' | xargs kill\nssh -o ExitOnForwardFailure=yes -f -N -L 5445:localhost:5445 root@188.245.224.58")
 
 	app = tea.NewProgram(newModel() /*, tea.WithAltScreen()*/)
 
