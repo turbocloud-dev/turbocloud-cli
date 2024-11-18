@@ -421,3 +421,39 @@ func updateEnvironment(newEnvironment Environment) EnvironmentEditedMsg {
 	return environment
 
 }
+
+func deleteEnvironment(environmentId string) bool {
+
+	req, err := http.NewRequest(http.MethodDelete, baseUrl+"environment/"+environmentId, nil)
+	if err != nil {
+		return false
+	}
+
+	client := &http.Client{}
+	res, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer res.Body.Close()
+
+	return true
+
+}
+
+func deployEnvironment(environmentId string) bool {
+
+	req, err := http.NewRequest(http.MethodPost, baseUrl+"deploy/environment/"+environmentId, nil)
+	if err != nil {
+		return false
+	}
+
+	client := &http.Client{}
+	res, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer res.Body.Close()
+
+	return true
+
+}

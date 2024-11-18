@@ -23,6 +23,7 @@ const SCREEN_TYPE_NEW_ENVIRONMENT = 8
 const SCREEN_TYPE_ENV_MENU = 12
 const SCREEN_TYPE_ENV_DELETE_CONFIRMATION = 13
 const SCREEN_TYPE_EDIT_ENVIRONMENT = 14
+const SCREEN_TYPE_DEPLOYMENT_SCHEDULED = 15
 
 // Strings
 const ADD_ENVIRONMENT_STRING = "Add Environment"
@@ -743,10 +744,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				} else if m.envMenu.SelectedItem().(item).title == MENU_DEPLOY {
 					//Deploy
-					screenType = SCREEN_TYPE_ENVIRONMENTS
+					screenType = SCREEN_TYPE_DEPLOYMENT_SCHEDULED
+					deployEnvironment(m.selectedEnvironment.Id)
 					return m, nil
 				} else if m.envMenu.SelectedItem().(item).title == MENU_EDIT {
-					//Deploy
+					//Edit environment
 					cmds = append(cmds, editEnvironmentMsg(m.selectedEnvironment.Id, m.selectedService.Id))
 				} else if m.envMenu.SelectedItem().(item).title == MENU_DELETE {
 					//Delete environment
@@ -759,11 +761,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if screenType == SCREEN_TYPE_ENV_DELETE_CONFIRMATION {
 				//A new environment has been selected
 				if strings.ToLower(m.deleteEnvConfirmation.Value()) == "y" {
-					m.selectedService.Id = m.serviceList.SelectedRow()[0]
-					m.selectedService.Name = m.serviceList.SelectedRow()[1]
+					deleteEnvironment(m.selectedEnvironment.Id)
 					return m, getEnvironmentsCmd(m.selectedService.Id)
 				}
 
+			} else if screenType == SCREEN_TYPE_DEPLOYMENT_SCHEDULED {
+				screenType = SCREEN_TYPE_ENVIRONMENTS
+				return m, nil
 			}
 		case "ctrl+c":
 			return m, tea.Quit
@@ -1019,6 +1023,13 @@ func (m model) View() string {
 			/*if m.newMachineForm.State == huh.StateCompleted {
 			}*/
 			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Edit Environment")) + topHintPositionStyle.Render(topHintStyle.Render("Press X or Space to select options\nPress Enter to confirm\nPress ESC to return to main menu")) + baseStyle.Render(m.newEnvironmentForm.View()) + "\n"
+		}
+
+	case SCREEN_TYPE_DEPLOYMENT_SCHEDULED:
+		{
+			/*if m.newMachineForm.State == huh.StateCompleted {
+			}*/
+			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Services > "+m.selectedService.Name+" > "+m.selectedEnvironment.Name)) + topHintPositionStyle.Render(newMachineHintTitleStyle.Render("\n Deployment is scheduled. \n Press Enter to dismiss this message")) + "\n"
 		}
 
 	}
