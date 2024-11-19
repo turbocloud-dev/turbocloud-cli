@@ -449,7 +449,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		screenType = 4
 
-		m.newMachineJoinHint = "    • SSH into the new machine\n    • Copy and run the following command (shown only once):\n\n" + codeHintStyle.Render("    curl https://raw.githubusercontent.com/turbocloud-dev/turbocloud-agent/refs/heads/main/scripts/turbocloud-server-setup.sh | sh -s -- -j https://"+msg.newMachine.JoinURL) + "\n\n    • Once provisioning is complete, the status will show as 'Online' next to the machine in the Machines list.\n\n"
+		m.newMachineJoinHint = "    • SSH into the new machine\n    • Copy and run the following command (shown only once):\n\n" + codeHintStyle.Render("    curl https://turbocloud.dev/setup | sh -s -- -j https://"+msg.newMachine.JoinURL) + "\n\n    • Once provisioning is complete, the status will show as 'Online' next to the machine in the Machines list.\n\n"
 		cmd := tea.Tick(100*time.Microsecond, func(t time.Time) tea.Msg {
 			return TickMsg(t)
 		})
@@ -942,8 +942,6 @@ func (m model) View() string {
 		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Machines")) + topHintPositionStyle.Render(topHintStyle.Render("Press Enter to select a machine\nPress ← or ESC to return to main menu")) + listStyle.Render(m.machineList.View()) + "\n\n\n" + listHelpStyle.Render(m.machineList.HelpView()) + "\n"
 	case 3:
 		{
-			/*if m.newMachineForm.State == huh.StateCompleted {
-			}*/
 			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Add Machine")) + topHintPositionStyle.Render(topHintStyle.Render("Press X or Space to select options\nPress Enter to confirm\nPress ESC to return to main menu")) + listStyle.Render(m.newMachineForm.View()) + "\n"
 		}
 	case 4:
@@ -958,15 +956,11 @@ func (m model) View() string {
 		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Services > "+m.selectedService.Name)) + topHintPositionStyle.Render(topHintStyle.Render("Press Enter to add or select an environment\nPress ← or ESC to return to Services")) + listStyle.Render(m.environmentList.View()) + "\n\n\n" + listHelpStyle.Render(m.environmentList.HelpView()) + "\n"
 	case 7:
 		{
-			/*if m.newMachineForm.State == huh.StateCompleted {
-			}*/
 			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Add Service")) + topHintPositionStyle.Render(topHintStyle.Render("Press X or Space to select options\nPress Enter to confirm\nPress ESC to return to main menu")) + baseStyle.Render(m.newServiceForm.View()) + "\n"
 		}
 
 	case SCREEN_TYPE_NEW_ENVIRONMENT:
 		{
-			/*if m.newMachineForm.State == huh.StateCompleted {
-			}*/
 			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Add Environment")) + topHintPositionStyle.Render(topHintStyle.Render("Press X or Space to select options\nPress Enter to confirm\nPress ESC to return to main menu")) + baseStyle.Render(m.newEnvironmentForm.View()) + "\n"
 		}
 	case 9:
@@ -975,7 +969,6 @@ func (m model) View() string {
 
 			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Environment has been added")) + "\n"
 		}
-
 	case 10:
 		{
 
@@ -992,7 +985,6 @@ func (m model) View() string {
 			}
 
 		}
-
 	case 11:
 		{
 
@@ -1020,21 +1012,14 @@ func (m model) View() string {
 
 	case SCREEN_TYPE_EDIT_ENVIRONMENT:
 		{
-			/*if m.newMachineForm.State == huh.StateCompleted {
-			}*/
 			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Edit Environment")) + topHintPositionStyle.Render(topHintStyle.Render("Press X or Space to select options\nPress Enter to confirm\nPress ESC to return to main menu")) + baseStyle.Render(m.newEnvironmentForm.View()) + "\n"
 		}
-
 	case SCREEN_TYPE_DEPLOYMENT_SCHEDULED:
 		{
-			/*if m.newMachineForm.State == huh.StateCompleted {
-			}*/
 			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Services > "+m.selectedService.Name+" > "+m.selectedEnvironment.Name)) + topHintPositionStyle.Render(newMachineHintTitleStyle.Render("\n Deployment is scheduled. \n Press Enter to dismiss this message")) + "\n"
 		}
-
 	}
 	return ""
-
 }
 
 var app *tea.Program
