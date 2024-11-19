@@ -39,7 +39,7 @@ func (d envMenuItemDelegate) Render(w io.Writer, m list.Model, index int, listIt
 	fmt.Fprint(w, fn(i.title))
 }
 
-func createEnvironmentDetails(m *model, machineOptions []huh.Option[string]) {
+func createEnvironmentDetails(m *model, machineOptions []huh.Option[string], confirmationTitle string, confirmationBtn string) {
 
 	m.newEnvironmentForm = huh.NewForm(
 		huh.NewGroup(
@@ -85,14 +85,14 @@ func createEnvironmentDetails(m *model, machineOptions []huh.Option[string]) {
 				Options(machineOptions...),
 			huh.NewConfirm().
 				Key("done").
-				Title("Add a new environment?").
+				Title(confirmationTitle).
 				Validate(func(v bool) error {
 					if !v {
 						screenType = 1
 					}
 					return nil
 				}).
-				Affirmative("Add").
+				Affirmative(confirmationBtn).
 				Negative("Cancel").
 				Value(&newEnvironmentIsAdd),
 		),

@@ -395,7 +395,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.selectedService.Name = msg.service.Name
 
 		machineOptions, _ := getMachineOptions()
-		createEnvironmentDetails(&m, machineOptions)
+		createEnvironmentDetails(&m, machineOptions, "Add a new environment?", "Add")
 
 	case EditEnvironmentMsg:
 		screenType = SCREEN_TYPE_EDIT_ENVIRONMENT
@@ -414,7 +414,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		newEnvironmentPort = msg.environment.Port
 		newEnvironmentDomain = msg.environment.Domains[0]
 
-		createEnvironmentDetails(&m, machineOptions)
+		createEnvironmentDetails(&m, machineOptions, "Save environment details?", "Save")
 
 	case NewEnvironmentAddedMsg:
 		screenType = 9
@@ -434,10 +434,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 
 			sshKeyHint := "    To allow cloning the git repository from your build machine, you should add public SSH key below to GitHub, Bitbucket, GitLab repository access keys (only read permission is required):\n\n" + codeHintStyle.Render(strings.Replace(machineBuilder.PublicSSHKey, "\n", "", -1)) + "\n\n"
-			webhookHint := "    To deploy after each Git push to a remote repository automatically, you should add a webhook below to GitHub, Bitbucket, GitLab repository webhooks:\n\n" + codeHintStyle.Render("https://"+machineBuilder.Domains[0]+"/deploy/environment/"+msg.Id)
+			webhookHint := "    To deploy after each Git push to a remote repository automatically, you should add a webhook below to GitHub, Bitbucket, GitLab repository webhooks:\n\n" + codeHintStyle.Render("https://"+machineBuilder.Domains[0]+"/deploy/"+m.selectedService.Id)
 
 			//This public SSH key also can be found if ssh into your build machine (usually the first server you provisioned in this project) and run 'cat ~/.ssh/id_rsa.pub'`
-			m.newEnvironmentHint = sshKeyHint + webhookHint + "\n\n    Options to deploy:\n\n    • Push any changes to the branch you specified in the previous step.\n    • Send a GET request to https://" + machineBuilder.Domains[0] + "/deploy/environment/" + msg.Id + "\n\n    To manage environments, go to Services and select a service from the list.\n\n"
+			m.newEnvironmentHint = sshKeyHint + webhookHint + "\n\n    Options to deploy:\n\n    • Push any changes to the branch you specified in the previous step.\n    • Send a POST request to https://" + machineBuilder.Domains[0] + "/deploy/environment/" + msg.Id + "\n\n    To manage environments, go to Services and select a service from the list.\n\n"
 		}
 
 		cmd := tea.Tick(100*time.Microsecond, func(t time.Time) tea.Msg {
@@ -449,7 +449,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		screenType = 4
 
-		m.newMachineJoinHint = "    • SSH into the new machine\n    • Copy and run the following command (shown only once):\n\n" + codeHintStyle.Render("    curl https://turbocloud.dev/setup | sh -s -- -j https://"+msg.newMachine.JoinURL) + "\n\n    • Once provisioning is complete, the status will show as 'Online' next to the machine in the Machines list.\n\n"
+		m.newMachineJoinHint = "    • SSH into the new machine\n    • Copy and run the following command (shown only once):\n\n" + codeHintStyle.Render("    curl https://turbocloud.dev/setup | bash -s -- -j https://"+msg.newMachine.JoinURL) + "\n\n    • Once provisioning is complete, the status will show as 'Online' next to the machine in the Machines list.\n\n"
 		cmd := tea.Tick(100*time.Microsecond, func(t time.Time) tea.Msg {
 			return TickMsg(t)
 		})
