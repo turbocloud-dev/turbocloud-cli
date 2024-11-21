@@ -597,11 +597,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			{Title: "ID", Width: 15},
 			{Title: "Name", Width: 16},
 			{Title: "Branch", Width: 16},
+			{Title: "Status", Width: 16},
 		}
 		rows := []table.Row{}
 
 		var tableRow []string
 		tableRow = append(tableRow, ADD_ENVIRONMENT_STRING)
+		tableRow = append(tableRow, "")
 		tableRow = append(tableRow, "")
 		tableRow = append(tableRow, "")
 
@@ -612,6 +614,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			tableRow = append(tableRow, environment.Id)
 			tableRow = append(tableRow, environment.Name)
 			tableRow = append(tableRow, environment.Branch)
+			tableRow = append(tableRow, environment.LastDeploymentStatus)
 
 			rows = append(rows, tableRow)
 		}

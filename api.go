@@ -255,14 +255,15 @@ func postService(newServiceName string, newServiceGitURL string) Service {
 }
 
 type Environment struct {
-	Id         string
-	Name       string
-	Branch     string
-	GitTag     string
-	Domains    []string
-	MachineIds []string
-	Port       string
-	ServiceId  string
+	Id                   string
+	Name                 string
+	Branch               string
+	GitTag               string
+	Domains              []string
+	MachineIds           []string
+	Port                 string
+	ServiceId            string
+	LastDeploymentStatus string
 }
 
 type EnvironmentsMsg []Environment
