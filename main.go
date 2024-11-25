@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -18,12 +19,16 @@ import (
 )
 
 // Screen Types
+
+const SCREEN_TYPE_MACHINES = 2
 const SCREEN_TYPE_ENVIRONMENTS = 6
 const SCREEN_TYPE_NEW_ENVIRONMENT = 8
 const SCREEN_TYPE_ENV_MENU = 12
 const SCREEN_TYPE_ENV_DELETE_CONFIRMATION = 13
 const SCREEN_TYPE_EDIT_ENVIRONMENT = 14
 const SCREEN_TYPE_DEPLOYMENT_SCHEDULED = 15
+const SCREEN_TYPE_MACHINE_MENU = 16
+const SCREEN_TYPE_MACHINE_DELETE_CONFIRMATION = 17
 
 // Strings
 const ADD_ENVIRONMENT_STRING = "Add Environment"
@@ -86,7 +91,10 @@ type model struct {
 	delegateKeys *delegateKeyMap
 
 	//Machines
-	machineList table.Model
+	machineList               table.Model
+	machineMenu               list.Model
+	selectedMachine           Machine
+	deleteMachineConfirmation textinput.Model
 
 	//Services
 	serviceList     table.Model
@@ -206,6 +214,21 @@ func menuEnvironmentMsg(envId string, envName string) tea.Cmd {
 
 }
 
+type MenuMachineMsg struct {
+	machine Machine
+}
+
+func menuMachineMsg(machineId string, machineName string) tea.Cmd {
+	return func() tea.Msg {
+		var msg MenuMachineMsg
+		msg.machine.Id = machineId
+		msg.machine.Name = machineName
+
+		return msg
+	}
+
+}
+
 func newMachineJoinURLMsg() tea.Msg {
 	var msg NewMachineJoinURLMsg
 	//Send a request to create a new machine
@@ -242,10 +265,17 @@ func newModel() model {
 	deleteEnvConfirmation.CharLimit = 156
 	deleteEnvConfirmation.Width = 20
 
+	//Setup deleteEnvConfirmation
+	deleteMachineConfirmation := textinput.New()
+	deleteMachineConfirmation.Focus()
+	deleteMachineConfirmation.CharLimit = 156
+	deleteMachineConfirmation.Width = 20
+
 	model := model{
-		list:                  mainMenu,
-		delegateKeys:          delegateKeys,
-		deleteEnvConfirmation: deleteEnvConfirmation,
+		list:                      mainMenu,
+		delegateKeys:              delegateKeys,
+		deleteEnvConfirmation:     deleteEnvConfirmation,
+		deleteMachineConfirmation: deleteMachineConfirmation,
 	}
 
 	return model
@@ -285,6 +315,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if screenType == SCREEN_TYPE_ENV_MENU {
 			v, _ := listStyle.GetFrameSize()
 			m.envMenu.SetSize(m.screenWidth-2*v, m.screenHeight-listTopHintHeght)
+		}
+
+		if screenType == SCREEN_TYPE_MACHINE_MENU {
+			v, _ := listStyle.GetFrameSize()
+			m.machineMenu.SetSize(m.screenWidth-2*v, m.screenHeight-listTopHintHeght)
 		}
 
 		ClearTerminal()
@@ -460,7 +495,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// tell the Bubble Tea runtime we want to exit because we have nothing
 		// else to do. We'll still be able to render a final view with our
 		// status message.
-		screenType = 2
+		screenType = SCREEN_TYPE_MACHINES
 
 		//Reload machine list
 		selectedRow := m.machineList.SelectedRow()
@@ -665,6 +700,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		v, _ := listStyle.GetFrameSize()
 		m.envMenu.SetSize(m.screenWidth-2*v, m.screenHeight-listTopHintHeght)
 
+	case MenuMachineMsg:
+		screenType = SCREEN_TYPE_MACHINE_MENU
+
+		machineMenuItems := []list.Item{
+			item{title: MENU_BACK, description: ""},
+			item{title: MENU_DELETE, description: ""},
+		}
+
+		m.machineMenu = list.New(machineMenuItems, envMenuItemDelegate{}, defaultWidth, listHeight)
+		m.machineMenu.SetShowStatusBar(false)
+		m.machineMenu.SetFilteringEnabled(false)
+		m.machineMenu.SetShowHelp(false)
+		m.machineMenu.SetShowTitle(false)
+
+		v, _ := listStyle.GetFrameSize()
+		m.machineMenu.SetSize(m.screenWidth-2*v, m.screenHeight-listTopHintHeght)
+
 	case tea.KeyMsg:
 		// Don't match any of the keys below if we're actively filtering.
 		if m.list.FilterState() == list.Filtering {
@@ -681,6 +733,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
+
+			if screenType == SCREEN_TYPE_MACHINE_MENU {
+				screenType = SCREEN_TYPE_MACHINES
+				return m, nil
+			} else if screenType == SCREEN_TYPE_MACHINE_DELETE_CONFIRMATION {
+				screenType = SCREEN_TYPE_MACHINE_MENU
+				return m, nil
+			}
+
 			if screenType == SCREEN_TYPE_ENVIRONMENTS {
 				screenType = 5
 				return m, nil
@@ -723,12 +784,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				screenType = SCREEN_TYPE_ENVIRONMENTS
 				return m, nil
 			}
+			if screenType == SCREEN_TYPE_MACHINE_MENU {
+				screenType = SCREEN_TYPE_MACHINES
+				return m, nil
+			}
 		case "enter":
 			if screenType == 5 {
 				//A service has been selected
 				m.selectedService.Id = m.serviceList.SelectedRow()[0]
 				m.selectedService.Name = m.serviceList.SelectedRow()[1]
 				return m, getEnvironmentsCmd(m.selectedService.Id)
+			} else if screenType == SCREEN_TYPE_MACHINES {
+				//A new machine has been selected
+				cmds = append(cmds, menuMachineMsg(m.machineList.SelectedRow()[0], m.machineList.SelectedRow()[1]))
+				m.selectedMachine.Id = m.machineList.SelectedRow()[0]
+				m.selectedMachine.Name = m.machineList.SelectedRow()[1]
+			} else if screenType == SCREEN_TYPE_MACHINE_MENU {
+				//A new environment has been selected
+				if m.machineMenu.SelectedItem().(item).title == MENU_BACK {
+					//Go back
+					screenType = SCREEN_TYPE_MACHINES
+					return m, nil
+				} else if m.machineMenu.SelectedItem().(item).title == MENU_DELETE {
+					//Delete environment
+					m.deleteMachineConfirmation.SetValue("")
+					m.deleteMachineConfirmation.Focus()
+					screenType = SCREEN_TYPE_MACHINE_DELETE_CONFIRMATION
+					return m, nil
+				}
+
 			} else if screenType == SCREEN_TYPE_ENVIRONMENTS {
 				//A new environment has been selected
 				if m.environmentList.SelectedRow()[0] == ADD_ENVIRONMENT_STRING {
@@ -766,6 +850,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if strings.ToLower(m.deleteEnvConfirmation.Value()) == "y" {
 					deleteEnvironment(m.selectedEnvironment.Id)
 					return m, getEnvironmentsCmd(m.selectedService.Id)
+				}
+
+			} else if screenType == SCREEN_TYPE_MACHINE_DELETE_CONFIRMATION {
+				//A new environment has been selected
+				if strings.ToLower(m.deleteMachineConfirmation.Value()) == "y" {
+					deleteMachine(m.selectedMachine.Id)
+					return m, getMachines
 				}
 
 			} else if screenType == SCREEN_TYPE_DEPLOYMENT_SCHEDULED {
@@ -928,8 +1019,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	}
 
+	if screenType == SCREEN_TYPE_MACHINE_MENU {
+		newList, cmd := m.machineMenu.Update(msg)
+		m.machineMenu = newList
+		cmds = append(cmds, cmd)
+
+	}
+
 	if screenType == SCREEN_TYPE_ENV_DELETE_CONFIRMATION {
 		m.deleteEnvConfirmation, cmd = m.deleteEnvConfirmation.Update(msg)
+		cmds = append(cmds, cmd)
+
+	}
+
+	if screenType == SCREEN_TYPE_MACHINE_DELETE_CONFIRMATION {
+		m.deleteMachineConfirmation, cmd = m.deleteMachineConfirmation.Update(msg)
 		cmds = append(cmds, cmd)
 
 	}
@@ -1007,10 +1111,19 @@ func (m model) View() string {
 	case SCREEN_TYPE_ENV_MENU:
 		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Services > "+m.selectedService.Name+" > "+m.selectedEnvironment.Name)) + topHintPositionStyle.Render(topHintStyle.Render("Press Enter to select\nPress ← or ESC to return to Environments")) + listStyle.Render(m.envMenu.View()) + "\n"
 
+	case SCREEN_TYPE_MACHINE_MENU:
+		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Machines > "+m.selectedMachine.Name)) + topHintPositionStyle.Render(topHintStyle.Render("Press Enter to select\nPress ← or ESC to return to Machines")) + listStyle.Render(m.machineMenu.View()) + "\n"
+
 	case SCREEN_TYPE_ENV_DELETE_CONFIRMATION:
 		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Services > "+m.selectedService.Name+" > "+m.selectedEnvironment.Name)) + topHintPositionStyle.Render(fmt.Sprintf(
 			"\n Do you really want to delete this environment? Type 'y' to confirm or press ESC to cancel.\n\n %s\n\n %s",
 			m.deleteEnvConfirmation.View(),
+			"(esc to quit)"))
+
+	case SCREEN_TYPE_MACHINE_DELETE_CONFIRMATION:
+		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Machines > "+m.selectedMachine.Name)) + topHintPositionStyle.Render(fmt.Sprintf(
+			"\n Do you really want to delete this machine? Type 'y' to confirm or press ESC to cancel.\n\n %s\n\n %s",
+			m.deleteMachineConfirmation.View(),
 			"(esc to quit)"))
 
 	case SCREEN_TYPE_EDIT_ENVIRONMENT:
@@ -1050,12 +1163,17 @@ func main() {
 
 	ClearTerminal()
 
-	//executeScriptString("lsof -i tcp:5445 | awk 'NR!=1 {print $2}' | xargs kill\nssh -o ExitOnForwardFailure=yes -f -N -L 5445:localhost:5445 root@188.245.224.58")
+	lighthouseIP := flag.String("i", "", "a string")
+	flag.Parse()
+
+	if *lighthouseIP != "" {
+		executeScriptString("lsof -i tcp:5445 | awk 'NR!=1 {print $2}' | xargs kill\nssh -o ExitOnForwardFailure=yes -f -N -L 5445:localhost:5445 root@" + *lighthouseIP)
+	}
 
 	app = tea.NewProgram(newModel() /*, tea.WithAltScreen()*/)
 
 	if _, err := app.Run(); err != nil {
-		fmt.Println("Error running program:", err)
+		fmt.Println("E	rror running program:", err)
 		os.Exit(1)
 	}
 }

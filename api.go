@@ -165,6 +165,24 @@ func postMachine(newMachineName string, newMachineTypes string) Machine {
 	return machine
 }
 
+func deleteMachine(machineId string) bool {
+
+	req, err := http.NewRequest(http.MethodDelete, baseUrl+"machine/"+machineId, nil)
+	if err != nil {
+		return false
+	}
+
+	client := &http.Client{}
+	res, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer res.Body.Close()
+
+	return true
+
+}
+
 type MachineMsg []Machine
 type errMsg struct{ err error }
 
