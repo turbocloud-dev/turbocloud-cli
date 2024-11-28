@@ -29,6 +29,7 @@ const SCREEN_TYPE_EDIT_ENVIRONMENT = 14
 const SCREEN_TYPE_DEPLOYMENT_SCHEDULED = 15
 const SCREEN_TYPE_MACHINE_MENU = 16
 const SCREEN_TYPE_MACHINE_DELETE_CONFIRMATION = 17
+const SCREEN_TYPE_SERVICE_DELETE_CONFIRMATION = 18
 
 // Strings
 const ADD_ENVIRONMENT_STRING = "Add Environment"
@@ -97,8 +98,9 @@ type model struct {
 	deleteMachineConfirmation textinput.Model
 
 	//Services
-	serviceList     table.Model
-	selectedService Service
+	serviceList               table.Model
+	selectedService           Service
+	deleteServiceConfirmation textinput.Model
 
 	//New service
 	newServiceForm *huh.Form
@@ -265,17 +267,24 @@ func newModel() model {
 	deleteEnvConfirmation.CharLimit = 156
 	deleteEnvConfirmation.Width = 20
 
-	//Setup deleteEnvConfirmation
+	//Setup deleteMachineConfirmation
 	deleteMachineConfirmation := textinput.New()
 	deleteMachineConfirmation.Focus()
 	deleteMachineConfirmation.CharLimit = 156
 	deleteMachineConfirmation.Width = 20
+
+	//Setup deleteMachineConfirmation
+	deleteServiceConfirmation := textinput.New()
+	deleteServiceConfirmation.Focus()
+	deleteServiceConfirmation.CharLimit = 156
+	deleteServiceConfirmation.Width = 20
 
 	model := model{
 		list:                      mainMenu,
 		delegateKeys:              delegateKeys,
 		deleteEnvConfirmation:     deleteEnvConfirmation,
 		deleteMachineConfirmation: deleteMachineConfirmation,
+		deleteServiceConfirmation: deleteServiceConfirmation,
 	}
 
 	return model
@@ -723,7 +732,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		switch msg.String() {
-
+		case "d":
+			if screenType == SCREEN_TYPE_ENVIRONMENTS {
+				//Show Delete Service confirmation screen
+				m.deleteServiceConfirmation.SetValue("")
+				m.deleteServiceConfirmation.Focus()
+				screenType = SCREEN_TYPE_SERVICE_DELETE_CONFIRMATION
+				return m, nil
+			}
 		// These keys should exit the program.
 		case "esc":
 			if screenType == 2 || screenType == 3 || screenType == 5 {
@@ -739,6 +755,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			} else if screenType == SCREEN_TYPE_MACHINE_DELETE_CONFIRMATION {
 				screenType = SCREEN_TYPE_MACHINE_MENU
+				return m, nil
+			}
+
+			if screenType == SCREEN_TYPE_SERVICE_DELETE_CONFIRMATION {
+				screenType = SCREEN_TYPE_ENVIRONMENTS
 				return m, nil
 			}
 
@@ -862,6 +883,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if screenType == SCREEN_TYPE_DEPLOYMENT_SCHEDULED {
 				screenType = SCREEN_TYPE_ENVIRONMENTS
 				return m, nil
+			} else if screenType == SCREEN_TYPE_SERVICE_DELETE_CONFIRMATION {
+				//A new environment has been selected
+				if strings.ToLower(m.deleteServiceConfirmation.Value()) == "y" {
+					//deleteMachine(m.selectedMachine.Id)
+					return m, getServices
+				}
+
 			}
 		case "ctrl+c":
 			return m, tea.Quit
@@ -1038,6 +1066,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	}
 
+	if screenType == SCREEN_TYPE_SERVICE_DELETE_CONFIRMATION {
+		m.deleteServiceConfirmation, cmd = m.deleteServiceConfirmation.Update(msg)
+		cmds = append(cmds, cmd)
+
+	}
+
 	return m, tea.Batch(cmds...)
 }
 
@@ -1059,8 +1093,15 @@ func (m model) View() string {
 		}
 	case 5:
 		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Services")) + topHintPositionStyle.Render(topHintStyle.Render("Press Enter to select a service\nPress ← or ESC to return to main menu")) + listStyle.Render(m.serviceList.View()) + "\n\n\n" + listHelpStyle.Render(m.serviceList.HelpView()) + "\n"
-	case 6:
-		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Services > "+m.selectedService.Name)) + topHintPositionStyle.Render(topHintStyle.Render("Press Enter to add or select an environment\nPress ← or ESC to return to Services")) + listStyle.Render(m.environmentList.View()) + "\n\n\n" + listHelpStyle.Render(m.environmentList.HelpView()) + "\n"
+	case SCREEN_TYPE_ENVIRONMENTS:
+		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Services > "+m.selectedService.Name)) + topHintPositionStyle.Render(topHintStyle.Render("Press d to delete the service\nPress Enter to add or select an environment\nPress ← or ESC to return to Services")) + listStyle.Render(m.environmentList.View()) + "\n\n" + listHelpStyle.Render(m.environmentList.HelpView()) + "\n"
+
+	case SCREEN_TYPE_SERVICE_DELETE_CONFIRMATION:
+		return breadhumbPositionStyle.Render(breadhumbStyle.Render("Services > "+m.selectedService.Name)) + topHintPositionStyle.Render(fmt.Sprintf(
+			"\n Do you really want to delete this service? Type 'y' to confirm or press ESC to cancel.\n\n %s\n\n %s",
+			m.deleteServiceConfirmation.View(),
+			"(esc to quit)"))
+
 	case 7:
 		{
 			return breadhumbPositionStyle.Render(breadhumbStyle.Render("Add Service")) + topHintPositionStyle.Render(topHintStyle.Render("Press X or Space to select options\nPress Enter to confirm\nPress ESC to return to main menu")) + baseStyle.Render(m.newServiceForm.View()) + "\n"
