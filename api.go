@@ -461,7 +461,7 @@ func deleteEnvironment(environmentId string) bool {
 
 func deployEnvironment(environmentId string) bool {
 
-	req, err := http.NewRequest(http.MethodPost, baseUrl+"deploy/environment/"+environmentId, nil)
+	req, err := http.NewRequest(http.MethodGet, baseUrl+"deploy/environment/"+environmentId, nil)
 	if err != nil {
 		return false
 	}
