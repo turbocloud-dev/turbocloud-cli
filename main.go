@@ -481,7 +481,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			webhookHint := "    To deploy after each Git push to a remote repository automatically, you should add a webhook below to GitHub (don't forget to select application/json in the Content-Type dropdown), Bitbucket repository webhooks:\n\n" + codeHintStyle.Render("https://"+machineBuilder.Domains[0]+"/deploy/"+m.selectedService.Id)
 
 			//This public SSH key also can be found if ssh into your build machine (usually the first server you provisioned in this project) and run 'cat ~/.ssh/id_rsa.pub'`
-			m.newEnvironmentHint = sshKeyHint + webhookHint + "\n\n    Options to deploy:\n\n    • Push any changes to the branch you specified in the previous step.\n    • Send a POST request to https://" + machineBuilder.Domains[0] + "/deploy/environment/" + msg.Id + "\n\n    To manage environments, go to Services and select a service from the list.\n\n"
+			m.newEnvironmentHint = sshKeyHint + webhookHint + "\n\n    Options to deploy:\n\n    • From the Environment menu: Main Menu → Services → Select Environment → Deploy\n    • Push any changes to the branch you specified in the previous step.\n    • Send a GET request to https://" + machineBuilder.Domains[0] + "/deploy/environment/" + msg.Id + "\n\n    To manage environments, go to Services and select a service from the list.\n\n"
 		}
 
 		cmd := tea.Tick(100*time.Microsecond, func(t time.Time) tea.Msg {
