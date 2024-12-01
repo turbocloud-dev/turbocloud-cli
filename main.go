@@ -636,6 +636,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		screenType = SCREEN_TYPE_ENVIRONMENTS
 
 		//Reload machine list
+		selectedRow := m.machineList.SelectedRow()
+		indexToSelect := 0
 
 		columns := []table.Column{
 			{Title: "ID", Width: 15},
@@ -653,7 +655,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		rows = append(rows, tableRow)
 
-		for _, environment := range msg {
+		for index, environment := range msg {
+
+			if selectedRow != nil && selectedRow[0] == environment.Id {
+				indexToSelect = index + 1
+			}
+
 			var tableRow []string
 			tableRow = append(tableRow, environment.Id)
 			tableRow = append(tableRow, environment.Name)
@@ -688,7 +695,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.environmentList.SetWidth(m.screenWidth - 2*v)
 		m.environmentList.SetHeight(m.screenHeight - listTopHintHeght)
 
-		return m, nil
+		m.environmentList.MoveDown(indexToSelect)
+		cmd := tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+			if screenType == SCREEN_TYPE_ENVIRONMENTS {
+				return getEnvironmentsCmd(m.selectedService.Id)
+			} else {
+				return TickMsg(t)
+			}
+		})
+		cmds = append(cmds, cmd)
 
 	case MenuEnvironmentMsg:
 		screenType = SCREEN_TYPE_ENV_MENU
