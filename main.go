@@ -636,7 +636,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		screenType = SCREEN_TYPE_ENVIRONMENTS
 
 		//Reload machine list
-		selectedRow := m.machineList.SelectedRow()
+		selectedRow := m.environmentList.SelectedRow()
 		indexToSelect := 0
 
 		columns := []table.Column{
@@ -698,7 +698,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.environmentList.MoveDown(indexToSelect)
 		cmd := tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 			if screenType == SCREEN_TYPE_ENVIRONMENTS {
-				return getEnvironmentsCmd(m.selectedService.Id)
+				return getEnvironments(m.selectedService.Id)
 			} else {
 				return TickMsg(t)
 			}
@@ -897,7 +897,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			} else if screenType == SCREEN_TYPE_DEPLOYMENT_SCHEDULED {
 				screenType = SCREEN_TYPE_ENVIRONMENTS
-				return m, nil
+				return m, getEnvironmentsCmd(m.selectedService.Id)
 			} else if screenType == SCREEN_TYPE_SERVICE_DELETE_CONFIRMATION {
 				//A new environment has been selected
 				if strings.ToLower(m.deleteServiceConfirmation.Value()) == "y" {
