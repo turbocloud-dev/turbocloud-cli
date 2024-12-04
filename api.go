@@ -272,6 +272,24 @@ func postService(newServiceName string, newServiceGitURL string) Service {
 	return service
 }
 
+func deleteService(serviceId string) bool {
+
+	req, err := http.NewRequest(http.MethodDelete, baseUrl+"service/"+serviceId, nil)
+	if err != nil {
+		return false
+	}
+
+	client := &http.Client{}
+	res, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer res.Body.Close()
+
+	return true
+
+}
+
 type Environment struct {
 	Id                   string
 	Name                 string

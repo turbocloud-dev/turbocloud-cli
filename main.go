@@ -901,7 +901,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if screenType == SCREEN_TYPE_SERVICE_DELETE_CONFIRMATION {
 				//A new environment has been selected
 				if strings.ToLower(m.deleteServiceConfirmation.Value()) == "y" {
-					//deleteMachine(m.selectedMachine.Id)
+					deleteService(m.selectedService.Id)
+					m.selectedService.Id = ""
 					return m, getServices
 				}
 
